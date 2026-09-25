@@ -1,0 +1,14 @@
+---
+description: Frontend Next.js / Shadcn conventions
+globs: frontend/**
+alwaysApply: false
+---
+
+# Frontend conventions
+
+- Next.js App Router + TypeScript + Shadcn UI.
+- Calculator lives at `/calc`; landing at `/`.
+- Use Shadcn primitives; keep operator toolbar buttons accessible (`aria-label`).
+- Call the backend via `src/lib/api.ts` and `NEXT_PUBLIC_API_URL`.
+- Prefer calm educational visuals; avoid purple-gradient / cream-serif AI clichés.
+- RelAlg and SQL modes share the same execute → results → tree flow.

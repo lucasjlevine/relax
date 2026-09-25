@@ -1,0 +1,109 @@
+group:R, S, T
+description:Small relations R, S, T for join and selection practice (inspired by UIBK misc group).
+
+exampleRelAlg[[
+pi a (sigma a > 1 (R))
+]]
+
+exampleSql[[
+SELECT a FROM R WHERE a > 1
+]]
+
+R = {
+a:number, b:string, c:string
+1, a, d
+2, b, d
+3, c, e
+4, d, f
+5, d, b
+}
+
+S = {
+b:string, d:number
+a, 100
+b, 200
+c, 300
+d, 400
+e, 500
+}
+
+T = {
+b:string, d:number
+b, 100
+c, 200
+d, 200
+}
+
+group:University
+description:Simple university schema for teaching projections, selections, and joins.
+
+exampleRelAlg[[
+pi name (sigma credits > 3 (Course))
+]]
+
+exampleSql[[
+SELECT name FROM Course WHERE credits > 3
+]]
+
+Student = {
+sid:number, name:string, major:string
+1, Alice, CS
+2, Bob, Math
+3, Carol, CS
+4, Dan, Physics
+}
+
+Course = {
+cid:number, name:string, credits:number
+101, Databases, 4
+102, Calculus, 3
+103, Physics I, 4
+104, Algorithms, 4
+}
+
+Enrolled = {
+sid:number, cid:number, grade:string
+1, 101, A
+1, 104, B
+2, 102, A
+3, 101, B
+3, 103, A
+4, 103, B
+}
+
+group:Suppliers
+description:Classic suppliers-parts style relations for set operations and joins.
+
+exampleRelAlg[[
+pi sname (sigma city = 'London' (Supplier))
+]]
+
+exampleSql[[
+SELECT sname FROM Supplier WHERE city = 'London'
+]]
+
+Supplier = {
+sid:number, sname:string, city:string
+1, Smith, London
+2, Jones, Paris
+3, Blake, Paris
+4, Clark, London
+}
+
+Part = {
+pid:number, pname:string, color:string
+1, Nut, Red
+2, Bolt, Green
+3, Screw, Blue
+4, Cam, Red
+}
+
+Supplies = {
+sid:number, pid:number, qty:number
+1, 1, 300
+1, 2, 200
+2, 3, 400
+3, 1, 100
+4, 4, 50
+4, 1, 200
+}

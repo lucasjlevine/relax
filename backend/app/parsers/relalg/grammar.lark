@@ -1,0 +1,92 @@
+// RelaX-compatible RelAlg grammar (core MVP operators)
+
+?start: expr
+
+?expr: binary
+
+?binary: join_expr
+
+?join_expr: set_expr
+          | join_expr JOIN_OP set_expr join_on?  -> join
+
+?join_on: ON condition
+
+?set_expr: cross_expr
+         | set_expr UNION_OP cross_expr          -> union
+         | set_expr INTERSECT_OP cross_expr      -> intersect
+         | set_expr EXCEPT_OP cross_expr         -> difference
+
+?cross_expr: unary
+           | cross_expr CROSS_OP unary           -> cross
+
+?unary: atom
+      | PROJ_OP proj_list atom                   -> projection
+      | SEL_OP condition atom                    -> selection
+      | RENAME_OP rename_target atom             -> rename
+
+?atom: NAME                                      -> relation
+     | "(" expr ")"
+
+proj_list: proj_item ("," proj_item)*
+proj_item: expr_value (ARROW NAME)?
+
+rename_target: NAME                              -> rename_relation
+             | rename_cols                       -> rename_columns_wrap
+rename_cols: rename_col ("," rename_col)*
+rename_col: NAME ARROW NAME
+
+?condition: or_cond
+?or_cond: and_cond
+        | or_cond OR_OP and_cond                 -> or_expr
+?and_cond: not_cond
+         | and_cond AND_OP not_cond              -> and_expr
+?not_cond: NOT_OP not_cond                       -> not_expr
+         | compare
+?compare: expr_value COMPARE_OP expr_value       -> comparison
+        | "(" condition ")"
+
+?expr_value: sum
+?sum: product
+    | sum ADD_OP product                         -> add
+    | sum SUB_OP product                         -> sub
+?product: primary_val
+        | product MUL_OP primary_val             -> mul
+        | product DIV_OP primary_val             -> div
+?primary_val: NUMBER                             -> number
+            | STRING                             -> string
+            | NULL                               -> null
+            | column_ref
+            | "(" expr_value ")"
+
+column_ref: NAME "." NAME                        -> qualified_column
+          | NAME                                 -> column
+
+// Keyword terminals must outrank NAME (priority via .N suffix)
+PROJ_OP.3: "π" | /pi/i
+SEL_OP.3: "σ" | /sigma/i
+RENAME_OP.3: "ρ" | /rho/i
+UNION_OP.3: "∪" | /union/i
+INTERSECT_OP.3: "∩" | /intersect/i
+EXCEPT_OP.3: "−" | /except/i | /minus/i
+CROSS_OP.3: "×" | /cross\s+join/i | /cross/i
+JOIN_OP.3: "⋈" | /join/i
+ON.3: /on/i
+AND_OP.3: "∧" | /and/i
+OR_OP.3: "∨" | /or/i
+NOT_OP.3: "¬" | /not/i
+NULL.3: /null/i
+
+COMPARE_OP: "!=" | "<>" | "<=" | ">=" | "=" | "<" | ">"
+ARROW: "→" | "->"
+ADD_OP: "+"
+SUB_OP: "-"
+MUL_OP: "*"
+DIV_OP: "/"
+
+NAME: /[A-Za-z_][A-Za-z0-9_]*/
+NUMBER: /-?\d+(\.\d+)?/
+STRING: /'([^'\\]|\\.)*'|"([^"\\]|\\.)*"/
+
+COMMENT: /--[^\n]*/ | /\/\*[\s\S]*?\*\//
+%ignore COMMENT
+%ignore /[ \t\f\r\n]+/

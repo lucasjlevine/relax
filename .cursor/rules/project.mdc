@@ -1,0 +1,13 @@
+---
+description: Monorepo conventions for the relax RelAlg/SQL learning app
+alwaysApply: true
+---
+
+# relax project conventions
+
+- Monorepo: `frontend/` (Next.js), `backend/` (FastAPI), `docs/`.
+- Scope is RelAlg + SQL only. Do not add BagAlg, TRC, or GE unless explicitly requested.
+- Keep RelAlg syntax RelaX-compatible (plaintext keywords + unicode symbols).
+- Prefer small feature branches; keep PRs focused.
+- Document user-facing syntax and API changes in `docs/`.
+- Do not commit secrets or `.env` files with credentials.

@@ -1,0 +1,14 @@
+---
+description: Backend FastAPI / DuckDB / Lark conventions
+globs: backend/**
+alwaysApply: false
+---
+
+# Backend conventions
+
+- Python 3.12, FastAPI, Pydantic v2, DuckDB, Lark, sqlglot.
+- RelAlg parsing lives in `app/parsers/relalg`; SQL validation in `app/parsers/sql`.
+- Execute only through DuckDB with read-only intent, timeouts, and row limits.
+- Reject DDL/DML in SQL mode; allow SELECT (and UNION of SELECTs).
+- Add pytest coverage for each new RelAlg operator and parse failure cases.
+- Dataset groups use RelaX-compatible `local_groups` text format under `backend/data/`.
