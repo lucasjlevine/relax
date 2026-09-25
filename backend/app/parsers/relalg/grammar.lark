@@ -1,39 +1,77 @@
-// RelaX-compatible RelAlg grammar (core MVP operators)
+// RelaX-compatible RelAlg grammar
+// Supports:
+//   prefix:  pi a, b (R)   | sigma a > 1 (R)
+//   subscript: π_{a, b}(R) | σ_{a > 1}(R) | ⋈_{a = b}
 
-?start: expr
+?start: statement
+
+statement: assignments? expr
+
+assignments: assignment+
+assignment: NAME "=" expr
 
 ?expr: binary
 
 ?binary: join_expr
 
 ?join_expr: set_expr
-          | join_expr JOIN_OP set_expr join_on?  -> join
+          | join_expr JOIN_KIND set_expr join_on?  -> join_kind
 
 ?join_on: ON condition
+        | SUB_OPEN condition SUB_CLOSE
 
 ?set_expr: cross_expr
          | set_expr UNION_OP cross_expr          -> union
          | set_expr INTERSECT_OP cross_expr      -> intersect
          | set_expr EXCEPT_OP cross_expr         -> difference
+         | set_expr DIV_OP cross_expr            -> division
 
 ?cross_expr: unary
            | cross_expr CROSS_OP unary           -> cross
 
 ?unary: atom
-      | PROJ_OP proj_list atom                   -> projection
-      | SEL_OP condition atom                    -> selection
-      | RENAME_OP rename_target atom             -> rename
+      | PROJ_OP proj_args atom                   -> projection
+      | SEL_OP sel_args atom                     -> selection
+      | RENAME_OP rename_args atom               -> rename
+      | ORDER_OP order_args atom                 -> orderby
+      | GROUP_OP group_args atom                 -> groupby
+      | DIST_OP atom                             -> distinct
+
+proj_args: SUB_OPEN proj_list SUB_CLOSE
+         | proj_list
+sel_args: SUB_OPEN condition SUB_CLOSE
+        | condition
+rename_args: SUB_OPEN rename_target SUB_CLOSE
+           | rename_target
+order_args: SUB_OPEN order_list SUB_CLOSE
+          | order_list
+group_args: SUB_OPEN group_spec SUB_CLOSE
+          | group_spec
 
 ?atom: NAME                                      -> relation
      | "(" expr ")"
 
 proj_list: proj_item ("," proj_item)*
-proj_item: expr_value (ARROW NAME)?
+         | STAR                                  -> proj_star
+proj_item: expr_value proj_alias?
+proj_alias: ARROW NAME
 
 rename_target: NAME                              -> rename_relation
              | rename_cols                       -> rename_columns_wrap
 rename_cols: rename_col ("," rename_col)*
 rename_col: NAME ARROW NAME
+
+order_list: order_item ("," order_item)*
+order_item: expr_value order_dir?
+order_dir: ORDER_DIR
+
+group_spec: group_cols (";" agg_list)?
+          | ";" agg_list                         -> group_aggs_only
+group_cols: expr_value ("," expr_value)*
+agg_list: agg_item ("," agg_item)*
+agg_item: AGG_FN "(" agg_arg ")" agg_alias?
+agg_alias: ARROW NAME
+agg_arg: STAR | expr_value
 
 ?condition: or_cond
 ?or_cond: and_cond
@@ -43,6 +81,7 @@ rename_col: NAME ARROW NAME
 ?not_cond: NOT_OP not_cond                       -> not_expr
          | compare
 ?compare: expr_value COMPARE_OP expr_value       -> comparison
+        | expr_value LIKE_OP expr_value          -> like_expr
         | "(" condition ")"
 
 ?expr_value: sum
@@ -51,37 +90,58 @@ rename_col: NAME ARROW NAME
     | sum SUB_OP product                         -> sub
 ?product: primary_val
         | product MUL_OP primary_val             -> mul
-        | product DIV_OP primary_val             -> div
+        | product DIV_ARITH primary_val          -> div
 ?primary_val: NUMBER                             -> number
             | STRING                             -> string
             | NULL                               -> null
+            | AGG_FN "(" agg_arg ")"             -> func_call_agg
+            | NAME "(" expr_list? ")"            -> func_call
             | column_ref
             | "(" expr_value ")"
+
+expr_list: expr_value ("," expr_value)*
 
 column_ref: NAME "." NAME                        -> qualified_column
           | NAME                                 -> column
 
-// Keyword terminals must outrank NAME (priority via .N suffix)
+JOIN_KIND.3: LEFT_OUTER | RIGHT_OUTER | FULL_OUTER | LEFT_SEMI | RIGHT_SEMI | ANTI | JOIN_OP
+LEFT_OUTER.4: "⟕" | /left\s+outer\s+join/i | /left\s+join/i
+RIGHT_OUTER.4: "⟖" | /right\s+outer\s+join/i | /right\s+join/i
+FULL_OUTER.4: "⟗" | /full\s+outer\s+join/i | /full\s+join/i
+LEFT_SEMI.4: "⋉" | /left\s+semi\s+join/i | /semijoin/i | /semi\s+join/i
+RIGHT_SEMI.4: "⋊" | /right\s+semi\s+join/i
+ANTI.4: "▷" | /anti\s+join/i | /antijoin/i
+JOIN_OP.3: "⋈" | /join/i
+
 PROJ_OP.3: "π" | /pi/i
 SEL_OP.3: "σ" | /sigma/i
 RENAME_OP.3: "ρ" | /rho/i
+ORDER_OP.3: "τ" | /tau/i | /order\s+by/i | /sort/i
+GROUP_OP.3: "γ" | /gamma/i | /group\s+by/i
+DIST_OP.3: "δ" | /delta/i | /distinct/i
 UNION_OP.3: "∪" | /union/i
 INTERSECT_OP.3: "∩" | /intersect/i
 EXCEPT_OP.3: "−" | /except/i | /minus/i
 CROSS_OP.3: "×" | /cross\s+join/i | /cross/i
-JOIN_OP.3: "⋈" | /join/i
+DIV_OP.3: "÷" | /division/i
 ON.3: /on/i
 AND_OP.3: "∧" | /and/i
 OR_OP.3: "∨" | /or/i
 NOT_OP.3: "¬" | /not/i
 NULL.3: /null/i
+LIKE_OP.3: /like/i | /ilike/i
+AGG_FN.3: /count/i | /sum/i | /avg/i | /min/i | /max/i
+ORDER_DIR.3: /asc/i | /desc/i
+STAR: "*"
 
-COMPARE_OP: "!=" | "<>" | "<=" | ">=" | "=" | "<" | ">"
+COMPARE_OP: "!=" | "<>" | "<=" | ">=" | "≠" | "≤" | "≥" | "=" | "<" | ">"
 ARROW: "→" | "->"
 ADD_OP: "+"
 SUB_OP: "-"
 MUL_OP: "*"
-DIV_OP: "/"
+DIV_ARITH: "/"
+SUB_OPEN.5: "_{" | "["
+SUB_CLOSE.5: "}" | "]"
 
 NAME: /[A-Za-z_][A-Za-z0-9_]*/
 NUMBER: /-?\d+(\.\d+)?/

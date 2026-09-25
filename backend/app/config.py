@@ -7,6 +7,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     datasets_path: str = "data/local_groups"
+    upload_dir: str = "data/uploads"
+    max_upload_bytes: int = 5 * 1024 * 1024  # 5 MB
     max_rows: int = 1000
     default_limit: int = 100
     query_timeout_ms: int = 5000

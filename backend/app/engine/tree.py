@@ -24,6 +24,8 @@ def _fmt_expr(node: object) -> str:
         if isinstance(node.value, str):
             return repr(node.value)
         return str(node.value)
+    if isinstance(node, ra.FuncCall):
+        return f"{node.name}({', '.join(_fmt_expr(a) for a in node.args)})"
     if isinstance(node, ra.BinaryExpr):
         return f"{_fmt_expr(node.left)} {node.op} {_fmt_expr(node.right)}"
     if isinstance(node, ra.UnaryExpr):
@@ -57,87 +59,73 @@ def build_operator_tree(node: ra.RANode, ids: _IdGen | None = None) -> OperatorT
             children=[build_operator_tree(node.child, ids)],
         )
 
-    if isinstance(node, ra.RenameRelation):
+    if isinstance(node, (ra.RenameRelation, ra.RenameColumns)):
+        label = (
+            f"ρ {node.new_name}"
+            if isinstance(node, ra.RenameRelation)
+            else "ρ " + ", ".join(f"{a}→{b}" for a, b in node.mapping)
+        )
         return OperatorTreeNode(
             id=nid,
-            label=f"ρ {node.new_name}",
+            label=label,
             operator="rename",
             children=[build_operator_tree(node.child, ids)],
         )
 
-    if isinstance(node, ra.RenameColumns):
-        mapping = ", ".join(f"{a}→{b}" for a, b in node.mapping)
+    if isinstance(node, ra.OrderBy):
+        keys = ", ".join(f"{_fmt_expr(e)} {d}" for e, d in node.keys)
         return OperatorTreeNode(
             id=nid,
-            label=f"ρ {mapping}",
-            operator="rename",
+            label=f"τ {keys}",
+            operator="orderby",
             children=[build_operator_tree(node.child, ids)],
         )
 
-    if isinstance(node, ra.Union):
+    if isinstance(node, ra.GroupBy):
         return OperatorTreeNode(
             id=nid,
-            label="∪",
-            operator="union",
-            children=[
-                build_operator_tree(node.left, ids),
-                build_operator_tree(node.right, ids),
-            ],
+            label="γ",
+            operator="groupby",
+            children=[build_operator_tree(node.child, ids)],
         )
 
-    if isinstance(node, ra.Intersect):
+    if isinstance(node, ra.Distinct):
         return OperatorTreeNode(
             id=nid,
-            label="∩",
-            operator="intersect",
-            children=[
-                build_operator_tree(node.left, ids),
-                build_operator_tree(node.right, ids),
-            ],
+            label="δ",
+            operator="distinct",
+            children=[build_operator_tree(node.child, ids)],
         )
 
-    if isinstance(node, ra.Except):
-        return OperatorTreeNode(
-            id=nid,
-            label="−",
-            operator="except",
-            children=[
-                build_operator_tree(node.left, ids),
-                build_operator_tree(node.right, ids),
-            ],
-        )
-
-    if isinstance(node, ra.Cross):
-        return OperatorTreeNode(
-            id=nid,
-            label="×",
-            operator="cross",
-            children=[
-                build_operator_tree(node.left, ids),
-                build_operator_tree(node.right, ids),
-            ],
-        )
-
-    if isinstance(node, ra.NaturalJoin):
-        return OperatorTreeNode(
-            id=nid,
-            label="⋈",
-            operator="natural_join",
-            children=[
-                build_operator_tree(node.left, ids),
-                build_operator_tree(node.right, ids),
-            ],
-        )
-
-    if isinstance(node, ra.ThetaJoin):
-        return OperatorTreeNode(
-            id=nid,
-            label=f"⋈ {_fmt_expr(node.condition)}",
-            operator="theta_join",
-            children=[
-                build_operator_tree(node.left, ids),
-                build_operator_tree(node.right, ids),
-            ],
-        )
+    binary = [
+        (ra.Union, "∪", "union"),
+        (ra.Intersect, "∩", "intersect"),
+        (ra.Except, "−", "except"),
+        (ra.Cross, "×", "cross"),
+        (ra.NaturalJoin, "⋈", "natural_join"),
+        (ra.Division, "÷", "division"),
+        (ra.ThetaJoin, "⋈", "theta_join"),
+        (ra.LeftOuterJoin, "⟕", "left_outer_join"),
+        (ra.RightOuterJoin, "⟖", "right_outer_join"),
+        (ra.FullOuterJoin, "⟗", "full_outer_join"),
+        (ra.LeftSemiJoin, "⋉", "left_semi_join"),
+        (ra.RightSemiJoin, "⋊", "right_semi_join"),
+        (ra.AntiJoin, "▷", "anti_join"),
+    ]
+    for cls, sym, op in binary:
+        if isinstance(node, cls):
+            label = sym
+            cond = getattr(node, "condition", None)
+            if cond is not None:
+                label = f"{sym} {_fmt_expr(cond)}"
+            return OperatorTreeNode(
+                id=nid,
+                label=label,
+                operator=op,
+                children=[
+                    build_operator_tree(node.left, ids),
+                    build_operator_tree(node.right, ids),
+                ],
+            )
 
     return OperatorTreeNode(id=nid, label="?", operator="unknown", children=[])

@@ -58,3 +58,19 @@ class QueryResponse(BaseModel):
 
 class HealthResponse(BaseModel):
     status: str
+
+
+class FormatRequest(BaseModel):
+    query: str
+    language: Literal["relalg", "sql"] = "relalg"
+
+
+class FormatResponse(BaseModel):
+    formatted: str
+
+
+class BuildRelationRequest(BaseModel):
+    name: str = "Custom relation"
+    relationName: str
+    columns: list[ColumnInfo]
+    rows: list[list[Any]]

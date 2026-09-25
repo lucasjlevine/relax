@@ -74,3 +74,47 @@ export async function runQuery(input: {
     }),
   );
 }
+
+export async function formatQuery(input: {
+  language: QueryLanguage;
+  query: string;
+}): Promise<string> {
+  const data = await handle<{ formatted: string }>(
+    await fetch(`${API_URL}/api/format`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+  );
+  return data.formatted;
+}
+
+export async function uploadDataset(
+  file: File,
+  relationName?: string,
+): Promise<DatasetDetail> {
+  const form = new FormData();
+  form.append("file", file);
+  if (relationName) form.append("relationName", relationName);
+  return handle<DatasetDetail>(
+    await fetch(`${API_URL}/api/datasets/upload`, {
+      method: "POST",
+      body: form,
+    }),
+  );
+}
+
+export async function buildRelation(input: {
+  name: string;
+  relationName: string;
+  columns: ColumnInfo[];
+  rows: unknown[][];
+}): Promise<DatasetDetail> {
+  return handle<DatasetDetail>(
+    await fetch(`${API_URL}/api/datasets/build`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+  );
+}

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 
@@ -19,7 +19,7 @@ class Relation(RANode):
 
 @dataclass
 class Projection(RANode):
-    items: list[tuple[Any, str | None]]  # (expr, optional alias)
+    items: list[tuple[Any, str | None]]
     child: RANode
 
 
@@ -37,7 +37,25 @@ class RenameRelation(RANode):
 
 @dataclass
 class RenameColumns(RANode):
-    mapping: list[tuple[str, str]]  # (old, new)
+    mapping: list[tuple[str, str]]
+    child: RANode
+
+
+@dataclass
+class OrderBy(RANode):
+    keys: list[tuple[Any, str]]  # (expr, "asc"|"desc")
+    child: RANode
+
+
+@dataclass
+class GroupBy(RANode):
+    group_cols: list[Any]
+    aggregates: list[tuple[str, Any, str | None]]  # (fn, expr, alias)
+    child: RANode
+
+
+@dataclass
+class Distinct(RANode):
     child: RANode
 
 
@@ -77,7 +95,39 @@ class ThetaJoin(BinaryOp):
     condition: Any
 
 
-# Value / condition expressions
+@dataclass
+class LeftOuterJoin(BinaryOp):
+    condition: Any | None = None  # None => natural
+
+
+@dataclass
+class RightOuterJoin(BinaryOp):
+    condition: Any | None = None
+
+
+@dataclass
+class FullOuterJoin(BinaryOp):
+    condition: Any | None = None
+
+
+@dataclass
+class LeftSemiJoin(BinaryOp):
+    condition: Any | None = None
+
+
+@dataclass
+class RightSemiJoin(BinaryOp):
+    condition: Any | None = None
+
+
+@dataclass
+class AntiJoin(BinaryOp):
+    condition: Any | None = None
+
+
+@dataclass
+class Division(BinaryOp):
+    pass
 
 
 @dataclass
@@ -102,3 +152,9 @@ class BinaryExpr:
 class UnaryExpr:
     op: str
     operand: Any
+
+
+@dataclass
+class FuncCall:
+    name: str
+    args: list[Any]

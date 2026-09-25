@@ -7,7 +7,7 @@ import { forwardRef, useImperativeHandle, useRef } from "react";
 import type { QueryLanguage } from "@/lib/api";
 
 export type QueryEditorHandle = {
-  insertAtCursor: (text: string) => void;
+  insertAtCursor: (text: string, cursorOffset?: number) => void;
   focus: () => void;
 };
 
@@ -23,16 +23,18 @@ export const QueryEditor = forwardRef<QueryEditorHandle, Props>(
     const cmRef = useRef<ReactCodeMirrorRef>(null);
 
     useImperativeHandle(ref, () => ({
-      insertAtCursor(text: string) {
+      insertAtCursor(text: string, cursorOffset?: number) {
         const view = cmRef.current?.view;
         if (!view) {
           onChange(value + text);
           return;
         }
         const { from, to } = view.state.selection.main;
+        const anchor =
+          cursorOffset !== undefined ? from + cursorOffset : from + text.length;
         view.dispatch({
           changes: { from, to, insert: text },
-          selection: { anchor: from + text.length },
+          selection: { anchor },
         });
         view.focus();
       },
@@ -46,7 +48,7 @@ export const QueryEditor = forwardRef<QueryEditorHandle, Props>(
         <CodeMirror
           ref={cmRef}
           value={value}
-          height="220px"
+          height="240px"
           basicSetup={{ lineNumbers: true, foldGutter: false }}
           extensions={[
             ...(language === "sql" ? [sql()] : []),
@@ -62,7 +64,7 @@ export const QueryEditor = forwardRef<QueryEditorHandle, Props>(
           onChange={onChange}
           placeholder={
             language === "relalg"
-              ? "pi a (sigma a > 1 (R))"
+              ? "π_{a}(σ_{a > 1}(R))   or   pi a (sigma a > 1 (R))"
               : "SELECT a FROM R WHERE a > 1"
           }
           className="text-sm"

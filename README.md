@@ -69,8 +69,8 @@ relax/
 
 ## Scope
 
-**Supported (MVP):** RelAlg core operators and SQL SELECT subset.  
-**Not in scope:** BagAlg, TRC, group editor, gist datasets (planned later).
+**Supported:** RelAlg core + extended operators (outer/semi/anti joins, γ, τ, δ, ÷), SQL SELECT subset, classical subscript notation + autoformat, CSV/SQLite upload and in-app relation builder.  
+**Not in scope yet:** BagAlg, TRC, gist datasets, intermediate-node result drill-down.
 
 ## Example queries
 

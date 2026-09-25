@@ -94,13 +94,36 @@ Execute RelAlg or SQL against a dataset.
 }
 ```
 
-### Error response (`4xx`)
+## `POST /api/format`
+
+Pretty-print a query. RelAlg is rewritten to classical subscript notation.
+
+### Request
+
+```json
+{ "language": "relalg", "query": "pi a (sigma a > 1 (R))" }
+```
+
+### Response
+
+```json
+{ "formatted": "π_{a}(σ_{a > 1}(R))" }
+```
+
+## `POST /api/datasets/upload`
+
+Multipart form: `file` (.csv / .db / .sqlite), optional `relationName` for CSV.
+Max size: 5 MB.
+
+## `POST /api/datasets/build`
+
+Build a relation from JSON:
 
 ```json
 {
-  "detail": {
-    "message": "Parse error near line 1",
-    "code": "parse_error"
-  }
+  "name": "Custom",
+  "relationName": "R",
+  "columns": [{ "name": "a", "type": "number" }],
+  "rows": [[1], [2]]
 }
 ```
