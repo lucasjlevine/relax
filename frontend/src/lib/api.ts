@@ -32,6 +32,13 @@ export type QueryResponse = {
 };
 export type QueryLanguage = "relalg" | "sql";
 
+export type UploadOptions = {
+  relationName?: string;
+  hasHeader?: boolean;
+  skipRows?: number;
+  delimiter?: string;
+};
+
 async function handle<T>(res: Response): Promise<T> {
   if (!res.ok) {
     let message = res.statusText;
@@ -91,11 +98,14 @@ export async function formatQuery(input: {
 
 export async function uploadDataset(
   file: File,
-  relationName?: string,
+  options: UploadOptions = {},
 ): Promise<DatasetDetail> {
   const form = new FormData();
   form.append("file", file);
-  if (relationName) form.append("relationName", relationName);
+  if (options.relationName) form.append("relationName", options.relationName);
+  form.append("hasHeader", String(options.hasHeader ?? true));
+  form.append("skipRows", String(options.skipRows ?? 0));
+  form.append("delimiter", options.delimiter ?? ",");
   return handle<DatasetDetail>(
     await fetch(`${API_URL}/api/datasets/upload`, {
       method: "POST",

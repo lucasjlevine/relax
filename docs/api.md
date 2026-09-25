@@ -112,8 +112,15 @@ Pretty-print a query. RelAlg is rewritten to classical subscript notation.
 
 ## `POST /api/datasets/upload`
 
-Multipart form: `file` (.csv / .db / .sqlite), optional `relationName` for CSV.
-Max size: 5 MB.
+Multipart form fields:
+
+| Field | Description |
+|-------|-------------|
+| `file` | `.csv`, `.db`, `.sqlite`, or `.sqlite3` (max 5 MB) |
+| `relationName` | Optional table name for CSV |
+| `hasHeader` | `true`/`false` — treat first data row as header (default true) |
+| `skipRows` | Integer rows to skip from the top (default 0) |
+| `delimiter` | CSV delimiter: `,`, `;`, tab, or `\|` (default `,`) |
 
 ## `POST /api/datasets/build`
 

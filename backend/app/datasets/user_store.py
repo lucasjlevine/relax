@@ -72,32 +72,65 @@ class UserDatasetStore:
         content: bytes,
         relation_name: str | None = None,
         dataset_name: str | None = None,
+        has_header: bool = True,
+        skip_rows: int = 0,
+        delimiter: str = ",",
     ) -> GroupDef:
         if len(content) > self.max_upload_bytes:
             raise DatasetError(
                 f"File exceeds max size of {self.max_upload_bytes // (1024 * 1024)} MB"
             )
         text = content.decode("utf-8-sig")
-        reader = csv.reader(io.StringIO(text))
+        reader = csv.reader(io.StringIO(text), delimiter=delimiter or ",")
         rows_raw = list(reader)
+        if skip_rows:
+            rows_raw = rows_raw[skip_rows:]
         if not rows_raw:
-            raise DatasetError("CSV is empty")
-        headers = [h.strip() or f"col{i+1}" for i, h in enumerate(rows_raw[0])]
-        for h in headers:
-            if not SAFE_NAME.match(h):
-                raise DatasetError(f"Invalid column name: {h}")
-        data_rows = rows_raw[1:]
-        col_values = list(zip(*data_rows)) if data_rows else [[] for _ in headers]
+            raise DatasetError("CSV is empty after skipping rows")
+
+        if has_header:
+            headers = [h.strip() or f"col{i+1}" for i, h in enumerate(rows_raw[0])]
+            data_rows = rows_raw[1:]
+        else:
+            width = max(len(r) for r in rows_raw)
+            headers = [f"col{i+1}" for i in range(width)]
+            data_rows = rows_raw
+
+        normalized_headers: list[str] = []
+        for i, h in enumerate(headers):
+            name = re.sub(r"[^A-Za-z0-9_]", "_", h.strip()) or f"col{i+1}"
+            if name[0].isdigit():
+                name = f"c_{name}"
+            # ensure uniqueness
+            base = name
+            n = 2
+            while name in normalized_headers:
+                name = f"{base}_{n}"
+                n += 1
+            normalized_headers.append(name)
+        headers = normalized_headers
+
+        # Pad/truncate rows to header width
+        fixed_rows: list[list[str]] = []
+        for row in data_rows:
+            cells = list(row) + [""] * max(0, len(headers) - len(row))
+            fixed_rows.append(cells[: len(headers)])
+
+        col_values = list(zip(*fixed_rows)) if fixed_rows else [[] for _ in headers]
         columns = [
-            ColumnDef(name=headers[i], type_name=_infer_type(list(col_values[i]) if col_values else []))
+            ColumnDef(
+                name=headers[i],
+                type_name=_infer_type(list(col_values[i]) if col_values else []),
+            )
             for i in range(len(headers))
         ]
         rows = [
             [_parse_cell(cell, columns[i].type_name) for i, cell in enumerate(row)]
-            for row in data_rows
-            if len(row) == len(headers)
+            for row in fixed_rows
         ]
         rel_name = relation_name or _safe_rel_name(Path(filename).stem)
+        if not SAFE_NAME.match(rel_name):
+            raise DatasetError(f"Invalid relation name: {rel_name}")
         uid = str(uuid.uuid4())[:8]
         group = GroupDef(
             id=f"upload-csv-{uid}",

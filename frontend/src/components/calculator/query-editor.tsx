@@ -3,8 +3,9 @@
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { sql } from "@codemirror/lang-sql";
 import { EditorView } from "@codemirror/view";
-import { forwardRef, useImperativeHandle, useRef } from "react";
+import { forwardRef, useImperativeHandle, useMemo, useRef } from "react";
 import type { QueryLanguage } from "@/lib/api";
+import { relalgSubscriptExtension } from "@/lib/relalg-subscript";
 
 export type QueryEditorHandle = {
   insertAtCursor: (text: string, cursorOffset?: number) => void;
@@ -43,6 +44,21 @@ export const QueryEditor = forwardRef<QueryEditorHandle, Props>(
       },
     }));
 
+    const extensions = useMemo(
+      () => [
+        ...(language === "sql" ? [sql()] : [relalgSubscriptExtension]),
+        EditorView.domEventHandlers({
+          keydown(event) {
+            if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+              event.preventDefault();
+              onExecute();
+            }
+          },
+        }),
+      ],
+      [language, onExecute],
+    );
+
     return (
       <div className="overflow-hidden rounded-md border bg-card">
         <CodeMirror
@@ -50,17 +66,7 @@ export const QueryEditor = forwardRef<QueryEditorHandle, Props>(
           value={value}
           height="240px"
           basicSetup={{ lineNumbers: true, foldGutter: false }}
-          extensions={[
-            ...(language === "sql" ? [sql()] : []),
-            EditorView.domEventHandlers({
-              keydown(event) {
-                if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
-                  event.preventDefault();
-                  onExecute();
-                }
-              },
-            }),
-          ]}
+          extensions={extensions}
           onChange={onChange}
           placeholder={
             language === "relalg"

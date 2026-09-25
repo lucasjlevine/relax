@@ -43,32 +43,30 @@ def list_datasets(request: Request) -> DatasetListResponse:
     )
 
 
-@router.get("/{dataset_id}", response_model=DatasetDetail)
-def get_dataset(dataset_id: str, request: Request) -> DatasetDetail:
-    catalog = request.app.state.catalog
-    try:
-        group = catalog.get(dataset_id)
-    except DatasetError as exc:
-        raise HTTPException(
-            status_code=404, detail={"message": str(exc), "code": "not_found"}
-        ) from exc
-    return _detail_from_group(group)
-
-
+# Static paths MUST be registered before /{dataset_id} or POSTs become 405s.
 @router.post("/upload", response_model=DatasetDetail)
 async def upload_dataset(
     request: Request,
     file: UploadFile = File(...),
     relationName: str | None = Form(default=None),
+    hasHeader: str = Form(default="true"),
+    skipRows: int = Form(default=0),
+    delimiter: str = Form(default=","),
 ) -> DatasetDetail:
     users = request.app.state.user_store
     content = await file.read()
     filename = file.filename or "upload"
     lower = filename.lower()
+    has_header = hasHeader.lower() in ("1", "true", "yes", "on")
     try:
         if lower.endswith(".csv"):
             group = users.from_csv(
-                filename=filename, content=content, relation_name=relationName
+                filename=filename,
+                content=content,
+                relation_name=relationName,
+                has_header=has_header,
+                skip_rows=max(0, int(skipRows)),
+                delimiter=delimiter or ",",
             )
         elif lower.endswith(".db") or lower.endswith(".sqlite") or lower.endswith(".sqlite3"):
             group = users.from_sqlite(filename=filename, content=content)
@@ -94,5 +92,17 @@ def build_relation(body: BuildRelationRequest, request: Request) -> DatasetDetai
     except DatasetError as exc:
         raise HTTPException(
             status_code=400, detail={"message": str(exc), "code": "build_error"}
+        ) from exc
+    return _detail_from_group(group)
+
+
+@router.get("/{dataset_id}", response_model=DatasetDetail)
+def get_dataset(dataset_id: str, request: Request) -> DatasetDetail:
+    catalog = request.app.state.catalog
+    try:
+        group = catalog.get(dataset_id)
+    except DatasetError as exc:
+        raise HTTPException(
+            status_code=404, detail={"message": str(exc), "code": "not_found"}
         ) from exc
     return _detail_from_group(group)

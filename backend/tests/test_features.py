@@ -48,7 +48,12 @@ def test_csv_upload():
     res = client.post(
         "/api/datasets/upload",
         files={"file": ("people.csv", csv_body, "text/csv")},
-        data={"relationName": "People"},
+        data={
+            "relationName": "People",
+            "hasHeader": "true",
+            "skipRows": "0",
+            "delimiter": ",",
+        },
     )
     assert res.status_code == 200
     body = res.json()
@@ -65,6 +70,28 @@ def test_csv_upload():
     )
     assert q.status_code == 200
     assert q.json()["rowCount"] == 2
+
+
+def test_csv_upload_skip_and_no_header():
+    from fastapi.testclient import TestClient
+    from app.main import create_app
+
+    client = TestClient(create_app())
+    csv_body = b"skip me\nx,y\n1,a\n2,b\n"
+    res = client.post(
+        "/api/datasets/upload",
+        files={"file": ("raw.csv", csv_body, "text/csv")},
+        data={
+            "relationName": "T",
+            "hasHeader": "false",
+            "skipRows": "1",
+            "delimiter": ",",
+        },
+    )
+    assert res.status_code == 200
+    rel = res.json()["relations"][0]
+    assert rel["rowCount"] == 3
+    assert rel["columns"][0]["name"] == "col1"
 
 
 def test_build_relation():
