@@ -127,6 +127,8 @@ class HealthResponse(BaseModel):
 class FormatRequest(BaseModel):
     query: str
     language: Literal["relalg", "sql"] = "relalg"
+    # pretty = indented / parenthesized; dense = compact, fewer parens
+    style: Literal["pretty", "dense"] = "pretty"
 
 
 class FormatResponse(BaseModel):

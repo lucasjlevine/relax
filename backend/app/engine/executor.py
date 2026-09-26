@@ -76,10 +76,14 @@ def _serialize_cell(value: Any) -> Any:
 
 
 class SchemaAwareCompiler(SqlCompiler):
-    """Compiler that introspects temporary results for division."""
+    """Compiler with dataset schemas (Relation.attr provenance) and division support."""
 
-    def __init__(self, conn: duckdb.DuckDBPyConnection) -> None:
-        super().__init__()
+    def __init__(
+        self,
+        conn: duckdb.DuckDBPyConnection,
+        relation_columns: dict[str, list[str]] | None = None,
+    ) -> None:
+        super().__init__(relation_columns)
         self.conn = conn
 
     def _columns_of(self, sql: str) -> list[str]:
@@ -192,7 +196,11 @@ def execute_relalg(
     try:
         conn.execute("SET enable_external_access=false")
         register_group(conn, group)
-        compiler = SchemaAwareCompiler(conn)
+        relation_columns = {
+            rel.name: [c.name for c in rel.columns]
+            for rel in group.relations.values()
+        }
+        compiler = SchemaAwareCompiler(conn, relation_columns)
 
         for idx, (ast, label) in enumerate(parsed):
             try:

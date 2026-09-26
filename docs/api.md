@@ -168,3 +168,5 @@ Triggers include:
 ## `POST /api/format`
 
 Pretty-print RelAlg (subscript notation) or SQL.
+
+Body: `{ "query", "language", "style"? }` where `style` is `pretty` (default: indented, fully parenthesized) or `dense` (single-line RelAlg, omit implied parentheses; compact SQL).

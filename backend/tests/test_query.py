@@ -89,6 +89,85 @@ def test_qualified_theta_join(joins):
     assert result2.rowCount > 0
 
 
+def test_actor_vs_director_fname_after_joins():
+    """Homonymous Relation.attr must resolve to the named relation's column."""
+    from app.datasets.loader import ColumnDef, GroupDef, RelationDef
+
+    group = GroupDef(
+        id="mad",
+        name="Movies",
+        relations={
+            "Movie": RelationDef(
+                name="Movie",
+                columns=[
+                    ColumnDef("mov_id", "number"),
+                    ColumnDef("title", "string"),
+                ],
+                rows=[[1, "Titanic"]],
+            ),
+            "Direction": RelationDef(
+                name="Direction",
+                columns=[
+                    ColumnDef("mov_id", "number"),
+                    ColumnDef("dir_id", "number"),
+                ],
+                rows=[[1, 10]],
+            ),
+            "Director": RelationDef(
+                name="Director",
+                columns=[
+                    ColumnDef("dir_id", "number"),
+                    ColumnDef("fname", "string"),
+                    ColumnDef("lname", "string"),
+                ],
+                rows=[[10, "James", "Cameron"]],
+            ),
+            "Cast": RelationDef(
+                name="Cast",
+                columns=[
+                    ColumnDef("mov_id", "number"),
+                    ColumnDef("act_id", "number"),
+                ],
+                rows=[[1, 20]],
+            ),
+            "Actor": RelationDef(
+                name="Actor",
+                columns=[
+                    ColumnDef("act_id", "number"),
+                    ColumnDef("fname", "string"),
+                    ColumnDef("lname", "string"),
+                ],
+                rows=[[20, "Kate", "Winslet"]],
+            ),
+        },
+    )
+    q = (
+        "π_{Movie.title, Actor.fname, Actor.lname}("
+        "  (((Movie ⋈ Direction)"
+        "    ⋈ σ_{Director.fname = 'James' ∧ Director.lname = 'Cameron'}(Director))"
+        "   ⋈_{Movie.mov_id = Cast.mov_id} Cast)"
+        "  ⋈_{Cast.act_id = Actor.act_id} Actor"
+        ")"
+    )
+    result = execute_relalg(group, q, limit=50, offset=0)
+    assert result.rowCount == 1
+    assert result.rows[0] == ["Titanic", "Kate", "Winslet"]
+
+    # Selection on Actor.fname must not match Director.fname
+    q2 = (
+        "π_{Movie.title, Actor.fname}("
+        "  σ_{Actor.fname = 'Kate'}("
+        "    (((Movie ⋈ Direction) ⋈ Director)"
+        "     ⋈_{Movie.mov_id = Cast.mov_id} Cast)"
+        "    ⋈_{Cast.act_id = Actor.act_id} Actor"
+        "  )"
+        ")"
+    )
+    result2 = execute_relalg(group, q2, limit=50, offset=0)
+    assert result2.rowCount == 1
+    assert result2.rows[0][1] == "Kate"
+
+
 def test_execute_sql(group):
     result = execute_sql_query(
         group,

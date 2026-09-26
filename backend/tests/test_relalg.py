@@ -80,6 +80,29 @@ def test_compile_unqualifies_relation_dot_attr():
     assert '"a"' in sql
 
 
+def test_qualified_attrs_distinguish_homonyms():
+    """Actor.fname must not bind to Director.fname after joins."""
+    cols = {
+        "Movie": ["mov_id", "title"],
+        "Direction": ["mov_id", "dir_id"],
+        "Director": ["dir_id", "fname", "lname"],
+        "Cast": ["mov_id", "act_id"],
+        "Actor": ["act_id", "fname", "lname"],
+    }
+    q = (
+        "π_{Movie.title, Actor.fname, Actor.lname}("
+        "  (((Movie ⋈ Direction)"
+        "    ⋈ σ_{Director.fname = 'James' ∧ Director.lname = 'Cameron'}(Director))"
+        "   ⋈_{Movie.mov_id = Cast.mov_id} Cast)"
+        "  ⋈_{Cast.act_id = Actor.act_id} Actor"
+        ")"
+    )
+    sql = compile_relalg(parse_relalg(q), cols)
+    assert '"Actor_fname"' in sql
+    assert '"Actor_lname"' in sql
+    assert "SELECT DISTINCT \"title\", \"Actor_fname\", \"Actor_lname\"" in sql
+
+
 def test_compile_null_equality_to_is_null():
     """RelAlg ``= null`` / ``!= null`` must become IS [NOT] NULL (any type)."""
     eq = compile_relalg(parse_relalg("σ_{rev_name = null}(Reviewer)"))

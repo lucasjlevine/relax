@@ -118,6 +118,72 @@ function HistoryDropdown({
   );
 }
 
+function FormatDropdown({
+  anchorRef,
+  onClose,
+  onPick,
+}: {
+  anchorRef: React.RefObject<HTMLElement | null>;
+  onClose: () => void;
+  onPick: (style: "pretty" | "dense") => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    const onClick = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (ref.current?.contains(t)) return;
+      if (anchorRef.current?.contains(t)) return;
+      onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onClick);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("mousedown", onClick);
+    };
+  }, [onClose, anchorRef]);
+
+  if (typeof document === "undefined") return null;
+
+  const rect = anchorRef.current?.getBoundingClientRect();
+  const top = rect ? rect.bottom + 6 : 120;
+  const right = rect ? Math.max(8, window.innerWidth - rect.right) : 16;
+
+  return createPortal(
+    <div
+      ref={ref}
+      style={{ top, right }}
+      className="fixed z-[100] w-[12rem] rounded-md border bg-card p-1 shadow-xl"
+      role="menu"
+      aria-label="Format style"
+    >
+      <button
+        type="button"
+        role="menuitem"
+        className="block w-full rounded px-2 py-1.5 text-left text-xs hover:bg-muted"
+        onClick={() => onPick("pretty")}
+      >
+        <span className="font-medium text-foreground">Pretty</span>
+        <div className="text-muted-foreground">Indented, fully parenthesized</div>
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        className="block w-full rounded px-2 py-1.5 text-left text-xs hover:bg-muted"
+        onClick={() => onPick("dense")}
+      >
+        <span className="font-medium text-foreground">Dense</span>
+        <div className="text-muted-foreground">Compact, fewer parentheses</div>
+      </button>
+    </div>,
+    document.body,
+  );
+}
+
 export function CalculatorApp() {
   const editorRef = useRef<QueryEditorHandle>(null);
   const languageRef = useRef<QueryLanguage>("relalg");
@@ -136,6 +202,7 @@ export function CalculatorApp() {
   const [panelTab, setPanelTab] = useState<SchemaPanelTab>("schema");
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [formatOpen, setFormatOpen] = useState(false);
   const [functionsOpen, setFunctionsOpen] = useState(false);
   const [forkNotice, setForkNotice] = useState<string | null>(null);
   const [sharePrompt, setSharePrompt] = useState<{
@@ -144,6 +211,7 @@ export function CalculatorApp() {
   } | null>(null);
   const functionsBtnRef = useRef<HTMLButtonElement>(null);
   const historyBtnRef = useRef<HTMLButtonElement>(null);
+  const formatBtnRef = useRef<HTMLButtonElement>(null);
   const booted = useRef(false);
 
   languageRef.current = language;
@@ -332,12 +400,13 @@ export function CalculatorApp() {
     }
   };
 
-  const autoformat = async () => {
+  const autoformat = async (style: "pretty" | "dense" = "pretty") => {
     setLoading(true);
     setError(null);
     try {
-      const formatted = await formatQuery({ language, query });
+      const formatted = await formatQuery({ language, query, style });
       setQuery(formatted);
+      setFormatOpen(false);
     } catch (err) {
       setErrorHeading(errorTitle(err, "Couldn’t format query"));
       setError(err instanceof Error ? err.message : "Format failed");
@@ -667,13 +736,25 @@ export function CalculatorApp() {
                   />
                 ) : null}
                 <Button
+                  ref={formatBtnRef}
                   variant="secondary"
-                  onClick={() => void autoformat()}
+                  onClick={() => {
+                    setHistoryOpen(false);
+                    setFunctionsOpen(false);
+                    setFormatOpen((o) => !o);
+                  }}
                   disabled={loading || !query.trim()}
                 >
                   <AlignLeft className="h-4 w-4" aria-hidden />
                   Format
                 </Button>
+                {formatOpen ? (
+                  <FormatDropdown
+                    anchorRef={formatBtnRef}
+                    onClose={() => setFormatOpen(false)}
+                    onPick={(style) => void autoformat(style)}
+                  />
+                ) : null}
                 <Button onClick={() => void execute()} disabled={loading || !dataset}>
                   <Play className="h-4 w-4" aria-hidden />
                   {loading ? "Working…" : "Execute"}

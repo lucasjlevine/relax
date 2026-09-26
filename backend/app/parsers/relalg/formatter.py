@@ -1,6 +1,16 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from app.parsers.relalg import ast as ra
+
+FormatStyle = Literal["pretty", "dense"]
+
+# Binary operator precedence (higher binds tighter). Joins > set ops.
+_PREC_SET = 1
+_PREC_JOIN = 2
+# Loosest “parent” for a unary’s argument (inside op_{…}( … )).
+_PREC_GROUP = 0
 
 
 def _fmt_expr(node: object) -> str:
@@ -44,15 +54,67 @@ def _indent(text: str, level: int) -> str:
     return "\n".join(pad + line if line else line for line in text.splitlines())
 
 
-def format_relalg(node: ra.RANode, *, level: int = 0, multiline: bool = True) -> str:
+def _binary_prec(node: ra.RANode) -> int | None:
+    if isinstance(node, (ra.Union, ra.Intersect, ra.Except)):
+        return _PREC_SET
+    if isinstance(
+        node,
+        (
+            ra.Cross,
+            ra.NaturalJoin,
+            ra.Division,
+            ra.ThetaJoin,
+            ra.LeftOuterJoin,
+            ra.RightOuterJoin,
+            ra.FullOuterJoin,
+            ra.LeftSemiJoin,
+            ra.RightSemiJoin,
+            ra.AntiJoin,
+        ),
+    ):
+        return _PREC_JOIN
+    return None
+
+
+def _paren_binary(
+    body: str,
+    *,
+    style: FormatStyle,
+    node_prec: int,
+    parent_prec: int | None,
+    side: str | None,
+) -> str:
+    """Pretty always wraps binaries; dense omits implied parentheses."""
+    if style != "dense":
+        return f"({body})"
+    if parent_prec is None:
+        return body
+    if node_prec > parent_prec:
+        return body
+    if node_prec < parent_prec:
+        return f"({body})"
+    # Same precedence, left-associative: only the right child needs parens.
+    return body if side == "left" else f"({body})"
+
+
+def format_relalg(
+    node: ra.RANode,
+    *,
+    level: int = 0,
+    style: FormatStyle = "pretty",
+    parent_prec: int | None = None,
+    side: str | None = None,
+) -> str:
     """Pretty-print RelAlg using classical subscript notation."""
+    dense = style == "dense"
+    multiline = not dense
 
     if isinstance(node, ra.Statement):
         parts: list[str] = []
         assigns = node.assignments or []
         for name, expr in assigns:
-            body = format_relalg(expr, level=0, multiline=multiline)
-            if "\n" in body:
+            body = format_relalg(expr, level=0, style=style)
+            if not dense and "\n" in body:
                 parts.append(f"{name} =\n{_indent(body, 1)}")
             else:
                 parts.append(f"{name} = {body}")
@@ -62,15 +124,24 @@ def format_relalg(node: ra.RANode, *, level: int = 0, multiline: bool = True) ->
             and isinstance(node.result, ra.Relation)
             and node.result.name == assigns[-1][0]
         ):
-            return "\n\n".join(parts)
-        result_s = format_relalg(node.result, level=0, multiline=multiline)
+            return ("\n" if dense else "\n\n").join(parts)
+        result_s = format_relalg(node.result, level=0, style=style)
         if parts:
-            return "\n\n".join(parts) + "\n\n" + result_s
+            sep = "\n" if dense else "\n\n"
+            return sep.join(parts) + sep + result_s
         return result_s
 
     def wrap_sub(op: str, sub: str, child: ra.RANode) -> str:
-        child_s = format_relalg(child, level=level + 1, multiline=multiline)
-        if multiline and ("\n" in child_s or len(sub) > 40):
+        # Child sits inside op_{…}( … ), so binaries there can drop outer parens.
+        child_s = format_relalg(
+            child,
+            level=level + 1,
+            style=style,
+            parent_prec=_PREC_GROUP if dense else None,
+        )
+        if multiline and (
+            "\n" in child_s or len(sub) > 40 or len(child_s) > 56
+        ):
             return f"{op}_{{{sub}}}(\n{_indent(child_s, 1)}\n)"
         return f"{op}_{{{sub}}}({child_s})"
 
@@ -111,7 +182,12 @@ def format_relalg(node: ra.RANode, *, level: int = 0, multiline: bool = True) ->
         return wrap_sub("γ", sub, node.child)
 
     if isinstance(node, ra.Distinct):
-        child_s = format_relalg(node.child, level=level + 1, multiline=multiline)
+        child_s = format_relalg(
+            node.child,
+            level=level + 1,
+            style=style,
+            parent_prec=_PREC_GROUP if dense else None,
+        )
         return f"δ({child_s})"
 
     binary_ops = {
@@ -124,11 +200,29 @@ def format_relalg(node: ra.RANode, *, level: int = 0, multiline: bool = True) ->
     }
     for cls, sym in binary_ops.items():
         if isinstance(node, cls):
-            left = format_relalg(node.left, level=level + 1, multiline=multiline)
-            right = format_relalg(node.right, level=level + 1, multiline=multiline)
-            if multiline and ("\n" in left or "\n" in right):
+            prec = _binary_prec(node) or _PREC_JOIN
+            left = format_relalg(
+                node.left, level=level + 1, style=style, parent_prec=prec, side="left"
+            )
+            right = format_relalg(
+                node.right, level=level + 1, style=style, parent_prec=prec, side="right"
+            )
+            if multiline and (
+                "\n" in left
+                or "\n" in right
+                or _binary_prec(node.left) is not None
+                or _binary_prec(node.right) is not None
+                or len(left) + len(right) > 48
+            ):
                 return f"(\n{_indent(left, 1)}\n  {sym}\n{_indent(right, 1)}\n)"
-            return f"({left} {sym} {right})"
+            body = f"{left} {sym} {right}"
+            return _paren_binary(
+                body,
+                style=style,
+                node_prec=prec,
+                parent_prec=parent_prec,
+                side=side,
+            )
 
     join_map = [
         (ra.ThetaJoin, "⋈"),
@@ -141,18 +235,57 @@ def format_relalg(node: ra.RANode, *, level: int = 0, multiline: bool = True) ->
     ]
     for cls, sym in join_map:
         if isinstance(node, cls):
-            left = format_relalg(node.left, level=level + 1, multiline=multiline)
-            right = format_relalg(node.right, level=level + 1, multiline=multiline)
+            prec = _PREC_JOIN
+            left = format_relalg(
+                node.left, level=level + 1, style=style, parent_prec=prec, side="left"
+            )
+            right = format_relalg(
+                node.right, level=level + 1, style=style, parent_prec=prec, side="right"
+            )
             cond = getattr(node, "condition", None)
             op = f"{sym}_{{{_fmt_expr(cond)}}}" if cond is not None else sym
-            if multiline and ("\n" in left or "\n" in right):
+            if multiline and (
+                "\n" in left
+                or "\n" in right
+                or _binary_prec(node.left) is not None
+                or _binary_prec(node.right) is not None
+                or len(left) + len(right) + len(op) > 48
+            ):
                 return f"(\n{_indent(left, 1)}\n  {op}\n{_indent(right, 1)}\n)"
-            return f"({left} {op} {right})"
+            body = f"{left} {op} {right}"
+            return _paren_binary(
+                body,
+                style=style,
+                node_prec=prec,
+                parent_prec=parent_prec,
+                side=side,
+            )
 
     return str(node)
 
 
-def format_relalg_query(query: str) -> str:
+def _normalize_leading_comments(leading: str) -> str:
+    """Drop blank lines around leading comments; end with a single newline."""
+    if not leading.strip():
+        return ""
+    return leading.strip("\n") + "\n"
+
+
+def _normalize_trailing_comments(trailing: str) -> str:
+    """
+    Keep inline `` -- note`` as a single-space prefix; put line/block comments
+    on the next line with exactly one leading newline.
+    """
+    if not trailing.strip():
+        return ""
+    # Same-line trailing comment (space then -- or /*)
+    rest = trailing.lstrip(" \t")
+    if trailing[:1] in " \t" and not rest.startswith("\n"):
+        return " " + rest.lstrip()
+    return "\n" + trailing.lstrip()
+
+
+def format_relalg_query(query: str, *, style: FormatStyle = "pretty") -> str:
     from app.parsers.relalg.parser import parse_relalg
     from app.parsers.relalg.statements import (
         peel_leading_comments,
@@ -166,32 +299,26 @@ def format_relalg_query(query: str) -> str:
         return ""
 
     multi = len(parts) > 1 or ";" in text
+    dense = style == "dense"
     chunks: list[str] = []
     for part in parts:
         if not part.strip():
             continue
         leading, rest = peel_leading_comments(part)
         code, trailing = peel_trailing_comments(rest)
+        lead = _normalize_leading_comments(leading)
+        trail = _normalize_trailing_comments(trailing)
         if not code.strip():
-            # Comment-only segment (e.g. after a final `;`) — keep as-is.
-            chunks.append(part.strip("\n"))
+            # Comment-only segment (e.g. after a final `;`) — keep comments only.
+            chunks.append(part.strip())
             continue
-        formatted = format_relalg(parse_relalg(code))
-        if multi and trailing.strip():
-            # Place `;` after the expression, before trailing comments.
-            lead = ""
-            if leading:
-                lead = leading if leading.endswith("\n") else leading + "\n"
-            piece = f"{lead}{formatted};{trailing}"
-        elif multi:
-            lead = ""
-            if leading:
-                lead = leading if leading.endswith("\n") else leading + "\n"
-            piece = f"{lead}{formatted}{trailing}".rstrip() + ";"
+        formatted = format_relalg(parse_relalg(code), style=style)
+        if multi:
+            piece = f"{lead}{formatted};{trail}"
         else:
-            lead = ""
-            if leading:
-                lead = leading if leading.endswith("\n") else leading + "\n"
-            piece = f"{lead}{formatted}{trailing}"
+            piece = f"{lead}{formatted}{trail}"
         chunks.append(piece)
-    return "\n\n".join(chunks) if multi else chunks[0]
+    if not multi:
+        return chunks[0]
+    sep = "\n" if dense else "\n\n"
+    return sep.join(c.rstrip("\n") for c in chunks)

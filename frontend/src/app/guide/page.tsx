@@ -123,8 +123,12 @@ export default function GuidePage() {
             <p>
               Both unicode symbols and plaintext keywords work. Keywords are
               case-insensitive. Prefer classical subscripts;{" "}
-              <strong className="font-medium text-foreground">Format</strong> rewrites
-              prefix style into subscript form.
+              <strong className="font-medium text-foreground">Format</strong>{" "}
+              rewrites prefix style into subscript form (
+              <strong className="font-medium text-foreground">Pretty</strong>{" "}
+              indented, or{" "}
+              <strong className="font-medium text-foreground">Dense</strong>{" "}
+              compact).
             </p>
 
             <h3 className="pt-2 text-base font-medium text-foreground">Unary operators</h3>

@@ -111,10 +111,14 @@ def format_query(body: FormatRequest) -> FormatResponse:
         )
     try:
         if body.language == "relalg":
-            return FormatResponse(formatted=format_relalg_query(body.query))
+            style = body.style if body.style in ("pretty", "dense") else "pretty"
+            return FormatResponse(
+                formatted=format_relalg_query(body.query, style=style)
+            )
         validate_sql(body.query)
         statements = sqlglot.parse(body.query.strip().rstrip(";"), read="duckdb")
-        formatted = statements[0].sql(dialect="duckdb", pretty=True)
+        pretty = body.style != "dense"
+        formatted = statements[0].sql(dialect="duckdb", pretty=pretty)
         return FormatResponse(formatted=formatted)
     except (RelAlgParseError, SqlValidationError) as exc:
         message = getattr(exc, "message", str(exc))

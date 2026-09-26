@@ -13,7 +13,7 @@ Both **unicode symbols** and **plaintext** keywords are accepted. Keywords are c
 | γ | `gamma` / `group by` | `γ_{cols; aggs}(R)` | `γ_{region; sum(amount)→total}(Sale)` |
 | δ | `delta` / `distinct` | `δ(R)` | `delta (Employee)` |
 
-Use **Format** in the calculator to rewrite prefix-style queries into classical subscript notation with indentation for nested expressions.
+Use **Format → Pretty** for classical subscripts with indentation, or **Format → Dense** for a compact single-line form that drops implied parentheses.
 
 Bracket form `π[a](R)` / `σ[a > 1](R)` is also accepted.
 
@@ -40,7 +40,7 @@ Boolean expressions in `sigma` and theta-join:
 - Comparisons: `=`, `!=`, `<>`, `<`, `<=`, `>`, `>=` (and unicode `≠`, `≤`, `≥`)
 - Null tests: `col = null` / `null = col` → is null; `col != null` / `col ≠ null` → is not null (any type)
 - Logic: `and` / `∧`, `or` / `∨`, `not` / `¬`
-- Column refs: `a` or `R.a`
+- Column refs: `a` or `R.a` (qualified names stay distinct through joins when several relations share an attribute, e.g. `Actor.fname` vs `Director.fname`; colliding join columns are aliased as `Relation_attr`)
 
 ## Automatic type coercion
 

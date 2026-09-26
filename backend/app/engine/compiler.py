@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from app.parsers.relalg import ast as ra
 
 
@@ -11,6 +13,129 @@ class CompileError(Exception):
 
 def _quote_ident(name: str) -> str:
     return '"' + name.replace('"', '""') + '"'
+
+
+@dataclass(frozen=True)
+class ColBind:
+    """One output column and which RelAlg ``Relation.attr`` origins it carries."""
+
+    name: str
+    origins: frozenset[tuple[str, str]]
+
+
+def _unique_join_name(base: str, used: set[str]) -> str:
+    """Pick an unused column name: ``base``, ``base_1``, ``base_2``, …"""
+    if base not in used:
+        return base
+    i = 1
+    while f"{base}_{i}" in used:
+        i += 1
+    return f"{base}_{i}"
+
+
+def _relation_attr_alias(col: ColBind) -> str:
+    """Stable alias ``Relation_attr`` for a column with known provenance."""
+    if col.origins:
+        rel, attr = sorted(col.origins)[0]
+        return f"{rel}_{attr}"
+    return col.name
+
+
+def _schema_join_on(left: list[ColBind], right: list[ColBind]) -> list[ColBind]:
+    """Schema after an ON/CROSS join: colliding right columns become ``Relation_attr``."""
+    used = {c.name for c in left}
+    out = list(left)
+    for c in right:
+        if c.name not in used:
+            out.append(c)
+            used.add(c.name)
+        else:
+            name = _unique_join_name(_relation_attr_alias(c), used)
+            out.append(ColBind(name, c.origins))
+            used.add(name)
+    return out
+
+
+def _join_on_select_list(
+    left_schema: list[ColBind],
+    right_schema: list[ColBind],
+    la: str,
+    ra_alias: str,
+) -> str:
+    """Explicit SELECT list matching ``_schema_join_on`` naming."""
+    out_schema = _schema_join_on(left_schema, right_schema)
+    parts: list[str] = []
+    for i, c in enumerate(left_schema):
+        parts.append(
+            f"{_quote_ident(la)}.{_quote_ident(c.name)} AS {_quote_ident(out_schema[i].name)}"
+        )
+    offset = len(left_schema)
+    for i, c in enumerate(right_schema):
+        out = out_schema[offset + i]
+        parts.append(
+            f"{_quote_ident(ra_alias)}.{_quote_ident(c.name)} AS {_quote_ident(out.name)}"
+        )
+    return ", ".join(parts)
+
+
+def _schema_natural(left: list[ColBind], right: list[ColBind]) -> list[ColBind]:
+    """Schema after NATURAL JOIN / JOIN USING (shared names once)."""
+    right_by = {c.name: c for c in right}
+    out: list[ColBind] = []
+    for c in left:
+        if c.name in right_by:
+            out.append(ColBind(c.name, c.origins | right_by[c.name].origins))
+        else:
+            out.append(c)
+    left_names = {c.name for c in left}
+    for c in right:
+        if c.name not in left_names:
+            out.append(c)
+    return out
+
+
+def _resolve_column(ref: ra.ColumnRef, schema: list[ColBind]) -> ra.ColumnRef:
+    if ref.name == "*":
+        return ref
+    if ref.relation:
+        matches = [c for c in schema if (ref.relation, ref.name) in c.origins]
+        if matches:
+            # Prefer the last match if duplicates (rightmost join wins) — should be 1.
+            return ra.ColumnRef(name=matches[-1].name, relation=None)
+        # Qualifier unknown in this subtree — fall back to bare name.
+        return ra.ColumnRef(name=ref.name, relation=None)
+    return ra.ColumnRef(name=ref.name, relation=None)
+
+
+def _resolve_expr(node: object, schema: list[ColBind]) -> object:
+    if isinstance(node, ra.ColumnRef):
+        return _resolve_column(node, schema)
+    if isinstance(node, ra.BinaryExpr):
+        return ra.BinaryExpr(
+            op=node.op,
+            left=_resolve_expr(node.left, schema),
+            right=_resolve_expr(node.right, schema),
+        )
+    if isinstance(node, ra.UnaryExpr):
+        return ra.UnaryExpr(op=node.op, operand=_resolve_expr(node.operand, schema))
+    if isinstance(node, ra.FuncCall):
+        return ra.FuncCall(
+            name=node.name,
+            args=[_resolve_expr(a, schema) for a in node.args],
+        )
+    if isinstance(node, ra.CaseExpr):
+        return ra.CaseExpr(
+            whens=[
+                (_resolve_expr(c, schema), _resolve_expr(r, schema))
+                for c, r in node.whens
+            ],
+            else_result=(
+                _resolve_expr(node.else_result, schema)
+                if node.else_result is not None
+                else None
+            ),
+        )
+    return node
 
 
 def _sql_literal(value: object) -> str:
@@ -326,6 +451,8 @@ def _join_sql(
     *,
     left_node: ra.RANode | None = None,
     right_node: ra.RANode | None = None,
+    left_schema: list[ColBind] | None = None,
+    right_schema: list[ColBind] | None = None,
 ) -> str:
     left = f"({left_sql}) AS {_quote_ident(la)}"
     right = f"({right_sql}) AS {_quote_ident(ra_alias)}"
@@ -351,16 +478,162 @@ def _join_sql(
             f"USING ({_quote_ident(rewritten.left.name)})"
         )
     cond = _sql_expr(rewritten)
+    if left_schema and right_schema:
+        select_list = _join_on_select_list(left_schema, right_schema, la, ra_alias)
+        return (
+            f"SELECT {select_list} FROM {left} {join_type} JOIN {right} ON {cond}"
+        )
     return f"SELECT * FROM {left} {join_type} JOIN {right} ON {cond}"
 
 
 class SqlCompiler:
-    def __init__(self) -> None:
+    def __init__(
+        self, relation_columns: dict[str, list[str]] | None = None
+    ) -> None:
         self._alias = 0
+        # Base relation → attribute names (enables Relation.attr provenance)
+        self._relation_columns = relation_columns or {}
+        # CTE / assignment name → schema of that subquery
+        self._cte_schemas: dict[str, list[ColBind]] = {}
 
     def _next_alias(self, prefix: str = "t") -> str:
         self._alias += 1
         return f"{prefix}{self._alias}"
+
+    def _schema(self, node: ra.RANode) -> list[ColBind]:
+        """Output column bindings for a RelAlg subtree."""
+        if isinstance(node, ra.Statement):
+            return self._schema(node.result)
+        if isinstance(node, ra.Relation):
+            if node.name in self._cte_schemas:
+                return list(self._cte_schemas[node.name])
+            cols = self._relation_columns.get(node.name)
+            if not cols:
+                return []
+            return [
+                ColBind(c, frozenset({(node.name, c)})) for c in cols
+            ]
+        if isinstance(node, ra.Selection):
+            return self._schema(node.child)
+        if isinstance(node, ra.Distinct):
+            return self._schema(node.child)
+        if isinstance(node, ra.OrderBy):
+            return self._schema(node.child)
+        if isinstance(node, ra.RenameRelation):
+            child = self._schema(node.child)
+            return [
+                ColBind(c.name, frozenset({(node.new_name, c.name)})) for c in child
+            ]
+        if isinstance(node, ra.RenameColumns):
+            mapping = {old: new for old, new in node.mapping}
+            out: list[ColBind] = []
+            for c in self._schema(node.child):
+                new_name = mapping.get(c.name, c.name)
+                origins = frozenset(
+                    (rel, mapping.get(attr, attr) if attr == c.name else attr)
+                    for rel, attr in c.origins
+                )
+                # Also bind (rel, new_name) for renamed attrs from each origin rel
+                extra = set(origins)
+                for rel, attr in c.origins:
+                    if attr == c.name and new_name != c.name:
+                        extra.add((rel, new_name))
+                out.append(ColBind(new_name, frozenset(extra)))
+            return out
+        if isinstance(node, ra.Projection):
+            child_schema = self._schema(node.child)
+            if (
+                len(node.items) == 1
+                and isinstance(node.items[0][0], ra.ColumnRef)
+                and node.items[0][0].name == "*"
+            ):
+                return child_schema
+            out = []
+            for expr, col_alias in node.items:
+                resolved = _resolve_expr(expr, child_schema) if child_schema else expr
+                if isinstance(resolved, ra.ColumnRef) and resolved.name != "*":
+                    origins = next(
+                        (c.origins for c in child_schema if c.name == resolved.name),
+                        frozenset(),
+                    )
+                    name = col_alias or resolved.name
+                    if col_alias and isinstance(expr, ra.ColumnRef) and expr.relation:
+                        origins = origins | frozenset({(expr.relation, expr.name)})
+                    out.append(ColBind(name, origins))
+                else:
+                    name = col_alias or "col"
+                    out.append(ColBind(name, frozenset()))
+            return out
+        if isinstance(node, ra.GroupBy):
+            child_schema = self._schema(node.child)
+            out: list[ColBind] = []
+            for c in node.group_cols:
+                resolved = (
+                    _resolve_expr(c, child_schema) if child_schema else c
+                )
+                if isinstance(resolved, ra.ColumnRef):
+                    origins = next(
+                        (b.origins for b in child_schema if b.name == resolved.name),
+                        frozenset(),
+                    )
+                    out.append(ColBind(resolved.name, origins))
+                else:
+                    out.append(ColBind("col", frozenset()))
+            for fn, arg, agg_alias in node.aggregates:
+                name = agg_alias or f"{fn}"
+                out.append(ColBind(name, frozenset()))
+            return out
+        if isinstance(node, (ra.Union, ra.Intersect, ra.Except)):
+            return self._schema(node.left)
+        if isinstance(node, ra.Cross):
+            return _schema_join_on(self._schema(node.left), self._schema(node.right))
+        if isinstance(node, ra.NaturalJoin):
+            return _schema_natural(self._schema(node.left), self._schema(node.right))
+        if isinstance(
+            node,
+            (
+                ra.ThetaJoin,
+                ra.LeftOuterJoin,
+                ra.RightOuterJoin,
+                ra.FullOuterJoin,
+            ),
+        ):
+            left_s = self._schema(node.left)
+            right_s = self._schema(node.right)
+            # USING(a) when unqualified a = a — same shape as natural for that key
+            cond = getattr(node, "condition", None)
+            if (
+                isinstance(cond, ra.BinaryExpr)
+                and cond.op == "="
+                and isinstance(cond.left, ra.ColumnRef)
+                and isinstance(cond.right, ra.ColumnRef)
+                and cond.left.relation is None
+                and cond.right.relation is None
+                and cond.left.name == cond.right.name
+            ):
+                return _schema_natural(left_s, right_s)
+            return _schema_join_on(left_s, right_s)
+        if isinstance(node, (ra.LeftSemiJoin, ra.AntiJoin)):
+            return self._schema(node.left)
+        if isinstance(node, ra.RightSemiJoin):
+            return self._schema(node.right)
+        if isinstance(node, ra.Division):
+            # Quotient = left attrs − right attrs (approximation without running SQL)
+            left_s = self._schema(node.left)
+            right_names = {c.name for c in self._schema(node.right)}
+            return [c for c in left_s if c.name not in right_names]
+        if hasattr(node, "child") and isinstance(getattr(node, "child"), ra.RANode):
+            return self._schema(node.child)
+        return []
+
+    def _bind_expr(self, expr: object, child: ra.RANode) -> object:
+        """Map ``Relation.attr`` to the correct flat SQL column in ``child``'s result."""
+        if not self._relation_columns and not self._cte_schemas:
+            return _unqualify_columns(expr)
+        schema = self._schema(child)
+        if not schema:
+            return _unqualify_columns(expr)
+        return _resolve_expr(expr, schema)
 
     def compile(self, node: ra.RANode) -> str:
         assignments: list[tuple[str, ra.RANode]] = []
@@ -372,7 +645,9 @@ class SqlCompiler:
             assignments = list(getattr(node, "_assignments", None) or [])
 
         with_parts: list[str] = []
+        self._cte_schemas = {}
         for name, expr in assignments:
+            self._cte_schemas[name] = self._schema(expr)
             with_parts.append(f"{_quote_ident(name)} AS ({self._compile(expr)})")
         body = self._compile(result)
         root = f"SELECT * FROM ({body}) AS {_quote_ident(self._next_alias('root'))}"
@@ -391,7 +666,7 @@ class SqlCompiler:
                 return f"SELECT DISTINCT * FROM ({child_sql}) AS {_quote_ident(alias)}"
             parts: list[str] = []
             for expr, col_alias in node.items:
-                rendered = _sql_expr(_unqualify_columns(expr))
+                rendered = _sql_expr(self._bind_expr(expr, node.child))
                 if col_alias:
                     parts.append(f"{rendered} AS {_quote_ident(col_alias)}")
                 else:
@@ -404,7 +679,7 @@ class SqlCompiler:
         if isinstance(node, ra.Selection):
             child_sql = self._compile(node.child)
             alias = self._next_alias()
-            cond_node = _unqualify_columns(node.condition)
+            cond_node = self._bind_expr(node.condition, node.child)
             cond = _sql_expr(cond_node)
             if _expr_contains_rownum(node.condition):
                 # DuckDB QUALIFY allows window functions in filters.
@@ -437,7 +712,7 @@ class SqlCompiler:
             child_sql = self._compile(node.child)
             alias = self._next_alias()
             keys = ", ".join(
-                f"{_sql_expr(_unqualify_columns(expr))} {direction.upper()}"
+                f"{_sql_expr(self._bind_expr(expr, node.child))} {direction.upper()}"
                 for expr, direction in node.keys
             )
             return (
@@ -447,10 +722,12 @@ class SqlCompiler:
         if isinstance(node, ra.GroupBy):
             child_sql = self._compile(node.child)
             alias = self._next_alias()
-            group_cols = [_sql_expr(_unqualify_columns(c)) for c in node.group_cols]
+            group_cols = [
+                _sql_expr(self._bind_expr(c, node.child)) for c in node.group_cols
+            ]
             select_parts = list(group_cols)
             for fn, arg, agg_alias in node.aggregates:
-                rendered = f"{fn.upper()}({_sql_expr(_unqualify_columns(arg))})"
+                rendered = f"{fn.upper()}({_sql_expr(self._bind_expr(arg, node.child))})"
                 if agg_alias:
                     rendered = f"{rendered} AS {_quote_ident(agg_alias)}"
                 select_parts.append(rendered)
@@ -482,6 +759,13 @@ class SqlCompiler:
             left = self._compile(node.left)
             right = self._compile(node.right)
             la, ra_alias = self._next_alias("l"), self._next_alias("r")
+            left_s, right_s = self._schema(node.left), self._schema(node.right)
+            if left_s and right_s:
+                select_list = _join_on_select_list(left_s, right_s, la, ra_alias)
+                return (
+                    f"SELECT {select_list} FROM ({left}) AS {_quote_ident(la)} "
+                    f"CROSS JOIN ({right}) AS {_quote_ident(ra_alias)}"
+                )
             return (
                 f"SELECT * FROM ({left}) AS {_quote_ident(la)} "
                 f"CROSS JOIN ({right}) AS {_quote_ident(ra_alias)}"
@@ -508,6 +792,8 @@ class SqlCompiler:
                 node.condition,
                 left_node=node.left,
                 right_node=node.right,
+                left_schema=self._schema(node.left),
+                right_schema=self._schema(node.right),
             )
 
         if isinstance(node, ra.LeftOuterJoin):
@@ -521,6 +807,8 @@ class SqlCompiler:
                 node.condition,
                 left_node=node.left,
                 right_node=node.right,
+                left_schema=self._schema(node.left),
+                right_schema=self._schema(node.right),
             )
 
         if isinstance(node, ra.RightOuterJoin):
@@ -534,6 +822,8 @@ class SqlCompiler:
                 node.condition,
                 left_node=node.left,
                 right_node=node.right,
+                left_schema=self._schema(node.left),
+                right_schema=self._schema(node.right),
             )
 
         if isinstance(node, ra.FullOuterJoin):
@@ -547,6 +837,8 @@ class SqlCompiler:
                 node.condition,
                 left_node=node.left,
                 right_node=node.right,
+                left_schema=self._schema(node.left),
+                right_schema=self._schema(node.right),
             )
 
         if isinstance(node, ra.LeftSemiJoin):
@@ -623,5 +915,8 @@ class SqlCompiler:
         raise CompileError(f"Unsupported RelAlg node: {type(node).__name__}")
 
 
-def compile_relalg(node: ra.RANode) -> str:
-    return SqlCompiler().compile(node)
+def compile_relalg(
+    node: ra.RANode,
+    relation_columns: dict[str, list[str]] | None = None,
+) -> str:
+    return SqlCompiler(relation_columns).compile(node)

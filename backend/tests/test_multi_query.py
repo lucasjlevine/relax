@@ -42,6 +42,45 @@ def test_format_preserves_trailing_comments():
     assert out3.count(";") >= 2
 
 
+def test_format_comments_idempotent():
+    from app.parsers.relalg.formatter import format_relalg_query
+
+    q = "-- first\nπ_{a}(R);\n-- mid\nπ_{b}(S);\n-- end"
+    once = format_relalg_query(q)
+    twice = format_relalg_query(once)
+    thrice = format_relalg_query(twice)
+    assert once == twice == thrice
+    assert once.count("\n\n\n") == 0
+
+    single = "-- Kate\nπ_{a}(R)\n-- trail"
+    s1 = format_relalg_query(single)
+    assert format_relalg_query(s1) == s1
+    assert s1 == "-- Kate\nπ_{a}(R)\n-- trail"
+
+
+def test_format_dense_omits_newlines_and_parens():
+    from app.parsers.relalg.formatter import format_relalg_query
+
+    q = "pi title (Movie join Direction join Director)"
+    pretty = format_relalg_query(q, style="pretty")
+    dense = format_relalg_query(q, style="dense")
+    assert "\n" in pretty
+    assert dense == "π_{title}(Movie ⋈ Direction ⋈ Director)"
+    assert "\n" not in dense
+    assert "((" not in dense
+
+    long_sub = (
+        "pi Movie.title, Actor.fname, Actor.lname ("
+        "Movie join Direction join Director "
+        "join Cast on Movie.mov_id = Cast.mov_id "
+        "join Actor on Cast.act_id = Actor.act_id)"
+    )
+    dense_long = format_relalg_query(long_sub, style="dense")
+    assert "\n" not in dense_long
+    assert "Actor.fname" in dense_long
+    assert "⋈_{Cast.act_id = Actor.act_id}" in dense_long
+
+
 def test_format_preserves_leading_comments():
     from app.parsers.relalg.formatter import format_relalg_query
 

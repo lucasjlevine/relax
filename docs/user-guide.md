@@ -16,7 +16,7 @@ Switching modes loads that dataset’s example query (when present).
 - Classical subscripts: `π_{name}(σ_{dept = 'Engineering'}(Employee))`
 - Prefix / RelaX style: `pi name (sigma dept = 'Engineering' (Employee))`
 - **Assignments:** `A = π_{…}(R)` then reuse `A` (last assignment is the result if there is no trailing expression)
-- **Format** converts prefix → classical subscripts (with indentation for nesting)
+- **Format** — **Pretty** (indented classical subscripts) or **Dense** (compact, fewer parentheses)
 - Toolbar inserts common operators; the cursor badge shows line:column and whether you are in π/σ/… subscripts (or on a relation / attribute / function)
 - Autocomplete suggests relations, attributes, and helper functions
 - **Functions** in the calculator header lists helpers (`rownum()`, `length()`, `CASE WHEN …`, …)

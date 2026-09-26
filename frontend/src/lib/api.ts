@@ -438,12 +438,17 @@ export async function runQuery(input: {
 export async function formatQuery(input: {
   language: QueryLanguage;
   query: string;
+  style?: "pretty" | "dense";
 }): Promise<string> {
   const data = await handle<{ formatted: string }>(
     await apiFetch(`${API_URL}/api/format`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(input),
+      body: JSON.stringify({
+        language: input.language,
+        query: input.query,
+        style: input.style ?? "pretty",
+      }),
     }),
   );
   return data.formatted;
