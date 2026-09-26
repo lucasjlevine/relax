@@ -2,31 +2,11 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
 const DATASETS = [
-  {
-    name: "Basics",
-    focus: "σ / π / ρ",
-    blurb: "One Employee relation for selection and projection.",
-  },
-  {
-    name: "Joins",
-    focus: "⋈",
-    blurb: "Project and Assign for natural and theta joins.",
-  },
-  {
-    name: "SetOps",
-    focus: "∪ ∩ −",
-    blurb: "Overlapping teams for union, intersect, and difference.",
-  },
-  {
-    name: "Aggregates",
-    focus: "γ",
-    blurb: "Sale rows for grouping and aggregates.",
-  },
-  {
-    name: "Library",
-    focus: "multi-table",
-    blurb: "Author, Book, and Loan for chained joins.",
-  },
+  { name: "Basics", focus: "σ π ρ", blurb: "Employee — selection & projection" },
+  { name: "Joins", focus: "⋈", blurb: "Project × Assign" },
+  { name: "SetOps", focus: "∪ ∩ −", blurb: "Overlapping teams" },
+  { name: "Aggregates", focus: "γ", blurb: "Sale — group by" },
+  { name: "Library", focus: "joins", blurb: "Author, Book, Loan" },
 ] as const;
 
 export default function HomePage() {
@@ -53,7 +33,7 @@ export default function HomePage() {
             href="#guide"
             className="hidden text-sm text-muted-foreground hover:text-foreground sm:inline"
           >
-            Guide
+            About
           </a>
           <Button asChild variant="outline">
             <Link href="/calc">Open calculator</Link>
@@ -66,18 +46,16 @@ export default function HomePage() {
           <h1 className="font-[family-name:var(--font-display)] text-5xl leading-[1.05] tracking-tight text-foreground md:text-7xl">
             relax
           </h1>
-          <p className="mt-5 max-w-xl text-lg text-muted-foreground md:text-xl">
-            Learn relational algebra and SQL by running queries against small teaching
-            datasets — with classical subscripts, results, and an operator tree.
+          <p className="mt-5 max-w-lg text-lg text-muted-foreground md:text-xl">
+            A browser calculator for relational algebra and SQL — write queries,
+            run them on teaching data, and see the result table plus operator tree.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Button asChild size="lg">
               <Link href="/calc">Open calculator</Link>
             </Button>
             <Button asChild size="lg" variant="secondary">
-              <a href="#guide">
-                How it works
-              </a>
+              <a href="#guide">About</a>
             </Button>
           </div>
           <pre className="mt-14 max-w-xl overflow-x-auto font-mono text-sm leading-relaxed text-primary/90">
@@ -93,78 +71,63 @@ export default function HomePage() {
         >
           <div className="mx-auto w-full max-w-5xl px-6">
             <h2 className="font-[family-name:var(--font-display)] text-3xl tracking-tight text-foreground">
-              What you can do
+              What this site is
             </h2>
             <p className="mt-3 max-w-2xl text-muted-foreground">
-              The calculator is RelAlg + SQL only — no BagAlg or TRC. Everything below is
-              available in the Teaching MVP.
+              relax is a learning tool in the spirit of RelaX: type RelAlg with classical
+              subscripts (or plaintext keywords), or switch to SQL. Queries run against
+              small built-in datasets — or ones you upload or build yourself.
             </p>
 
-            <ol className="mt-12 space-y-10">
-              <li className="grid gap-2 md:grid-cols-[140px_1fr] md:gap-8">
-                <span className="font-mono text-sm text-primary">01 · modes</span>
-                <div>
-                  <h3 className="text-lg font-medium text-foreground">RelAlg and SQL</h3>
-                  <p className="mt-1 text-muted-foreground">
-                    Switch languages freely. RelAlg accepts unicode operators (
-                    <code className="text-foreground/80">σ π ⋈ γ</code>
-                    ) and plaintext keywords (
-                    <code className="text-foreground/80">sigma</code>,{" "}
-                    <code className="text-foreground/80">pi</code>,{" "}
-                    <code className="text-foreground/80">join</code>
-                    ). Format rewrites prefix style into classical subscripts.
-                  </p>
-                </div>
-              </li>
-              <li className="grid gap-2 md:grid-cols-[140px_1fr] md:gap-8">
-                <span className="font-mono text-sm text-primary">02 · datasets</span>
-                <div>
-                  <h3 className="text-lg font-medium text-foreground">
-                    Five built-in scopes — or bring your own
-                  </h3>
-                  <p className="mt-1 text-muted-foreground">
-                    Start from curated examples, upload CSV/SQLite, build a relation in the
-                    UI, or manage rows/names in the Manage tab (drag the left panel wider).
-                  </p>
-                  <ul className="mt-4 space-y-2">
-                    {DATASETS.map((ds) => (
-                      <li
-                        key={ds.name}
-                        className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm"
-                      >
-                        <span className="min-w-[6.5rem] font-medium text-foreground">
-                          {ds.name}
-                        </span>
-                        <span className="font-mono text-xs text-primary">{ds.focus}</span>
-                        <span className="text-muted-foreground">{ds.blurb}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </li>
-              <li className="grid gap-2 md:grid-cols-[140px_1fr] md:gap-8">
-                <span className="font-mono text-sm text-primary">03 · results</span>
-                <div>
-                  <h3 className="text-lg font-medium text-foreground">
-                    Table, tree, and CSV export
-                  </h3>
-                  <p className="mt-1 text-muted-foreground">
-                    Execute shows a scrollable result table and a compact operator tree.
-                    Export the current result as CSV anytime.
-                  </p>
-                </div>
-              </li>
-            </ol>
+            <div className="mt-12 grid gap-10 md:grid-cols-2">
+              <div>
+                <h3 className="text-lg font-medium text-foreground">In the calculator</h3>
+                <ul className="mt-3 space-y-2 text-muted-foreground">
+                  <li>
+                    RelAlg operators (σ π ⋈ γ ∪ …) and a SQL SELECT mode
+                  </li>
+                  <li>
+                    Named steps with assignments (
+                    <code className="text-foreground/80">A = π_…(R)</code>
+                    ), then reuse <code className="text-foreground/80">A</code>
+                  </li>
+                  <li>
+                    Helper functions (
+                    <code className="text-foreground/80">rownum</code>,{" "}
+                    <code className="text-foreground/80">length</code>,{" "}
+                    <code className="text-foreground/80">CASE WHEN</code>
+                    , …)
+                  </li>
+                  <li>Result table, operator tree, Format, History, CSV export</li>
+                </ul>
+              </div>
+              <div>
+                <h3 className="text-lg font-medium text-foreground">Built-in datasets</h3>
+                <ul className="mt-3 space-y-2 text-sm">
+                  {DATASETS.map((ds) => (
+                    <li
+                      key={ds.name}
+                      className="flex flex-wrap items-baseline gap-x-3 gap-y-1"
+                    >
+                      <span className="min-w-[5.5rem] font-medium text-foreground">
+                        {ds.name}
+                      </span>
+                      <span className="font-mono text-xs text-primary">{ds.focus}</span>
+                      <span className="text-muted-foreground">{ds.blurb}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
 
-            <div className="mt-16 flex flex-wrap items-center gap-4 border-t border-primary/10 pt-10">
+            <div className="mt-14 flex flex-wrap items-center gap-4 border-t border-primary/10 pt-10">
               <Button asChild>
                 <Link href="/calc">Try the calculator</Link>
               </Button>
-              <p className="text-sm text-muted-foreground">
-                Syntax reference and API notes live in the repo under{" "}
-                <span className="font-mono text-foreground/80">docs/</span>
-                — start with{" "}
-                <span className="font-mono text-foreground/80">user-guide.md</span>.
+              <p className="max-w-md text-sm text-muted-foreground">
+                Scope is RelAlg + SQL only (no BagAlg or TRC). Open{" "}
+                <strong className="font-medium text-foreground/80">Functions</strong> in
+                the calculator for the expression helper list.
               </p>
             </div>
           </div>

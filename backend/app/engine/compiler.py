@@ -34,29 +34,146 @@ def _sql_expr(node: object) -> str:
         return _quote_ident(node.name)
     if isinstance(node, ra.Literal):
         return _sql_literal(node.value)
+    if isinstance(node, ra.CaseExpr):
+        parts = ["CASE"]
+        for cond, result in node.whens:
+            parts.append(f"WHEN {_sql_expr(cond)} THEN {_sql_expr(result)}")
+        if node.else_result is not None:
+            parts.append(f"ELSE {_sql_expr(node.else_result)}")
+        parts.append("END")
+        return "(" + " ".join(parts) + ")"
     if isinstance(node, ra.FuncCall):
-        args = ", ".join(
-            "*" if isinstance(a, ra.ColumnRef) and a.name == "*" else _sql_expr(a)
-            for a in node.args
-        )
-        return f"{node.name.upper()}({args})"
+        return _sql_func(node)
     if isinstance(node, ra.BinaryExpr):
         op = node.op
         if op == "<>":
             op = "!="
+        if op == "xor":
+            return (
+                f"(({_sql_expr(node.left)}) <> ({_sql_expr(node.right)}))"
+            )
         if op in ("and", "or"):
             return f"({_sql_expr(node.left)} {op.upper()} {_sql_expr(node.right)})"
         if op in ("like", "ilike"):
             return f"({_sql_expr(node.left)} {op.upper()} {_sql_expr(node.right)})"
+        if op == "%":
+            return f"({_sql_expr(node.left)} % {_sql_expr(node.right)})"
         return f"({_sql_expr(node.left)} {op} {_sql_expr(node.right)})"
     if isinstance(node, ra.UnaryExpr):
         if node.op == "not":
             return f"(NOT {_sql_expr(node.operand)})"
         raise CompileError(f"Unsupported unary op: {node.op}")
-    # STAR token passed as ColumnRef("*") usually; allow raw Token-like
     if node == "*":
         return "*"
     raise CompileError(f"Unsupported expression: {node!r}")
+
+
+def _expr_contains_rownum(node: object) -> bool:
+    if isinstance(node, ra.FuncCall) and node.name.lower() in ("rownum", "row_number"):
+        return True
+    if isinstance(node, ra.CaseExpr):
+        for cond, result in node.whens:
+            if _expr_contains_rownum(cond) or _expr_contains_rownum(result):
+                return True
+        return node.else_result is not None and _expr_contains_rownum(node.else_result)
+    if isinstance(node, ra.BinaryExpr):
+        return _expr_contains_rownum(node.left) or _expr_contains_rownum(node.right)
+    if isinstance(node, ra.UnaryExpr):
+        return _expr_contains_rownum(node.operand)
+    if isinstance(node, ra.FuncCall):
+        return any(_expr_contains_rownum(a) for a in node.args)
+    return False
+
+
+def _sql_func(node: ra.FuncCall) -> str:
+    name = node.name.lower()
+    args = node.args
+
+    def a(i: int = 0) -> str:
+        if i >= len(args):
+            raise CompileError(f"{name}() expects more arguments")
+        return _sql_expr(args[i])
+
+    # Nullary / special
+    if name in ("rownum", "row_number"):
+        if args:
+            raise CompileError("rownum() takes no arguments")
+        return "((ROW_NUMBER() OVER ()) - 1)"
+    if name == "rand":
+        if args:
+            raise CompileError("rand() takes no arguments")
+        return "random()"
+    if name in ("now", "transaction_timestamp", "statement_timestamp", "clock_timestamp"):
+        if args:
+            raise CompileError(f"{name}() takes no arguments")
+        return "CURRENT_TIMESTAMP"
+
+    # String
+    if name in ("length", "strlen"):
+        return f"LENGTH(CAST({a(0)} AS VARCHAR))"
+    if name in ("upper", "ucase"):
+        return f"UPPER(CAST({a(0)} AS VARCHAR))"
+    if name in ("lower", "lcase"):
+        return f"LOWER(CAST({a(0)} AS VARCHAR))"
+    if name == "concat":
+        if not args:
+            raise CompileError("concat() needs at least one argument")
+        return "CONCAT(" + ", ".join(
+            f"CAST({_sql_expr(x)} AS VARCHAR)" for x in args
+        ) + ")"
+
+    # Date / time
+    if name == "date":
+        return f"CAST({a(0)} AS DATE)"
+    if name == "adddate":
+        return f"(({a(0)})::DATE + CAST({a(1)} AS INTEGER) * INTERVAL 1 DAY)"
+    if name == "subdate":
+        return f"(({a(0)})::DATE - CAST({a(1)} AS INTEGER) * INTERVAL 1 DAY)"
+    if name == "year":
+        return f"EXTRACT(YEAR FROM CAST({a(0)} AS TIMESTAMP))"
+    if name == "month":
+        return f"EXTRACT(MONTH FROM CAST({a(0)} AS TIMESTAMP))"
+    if name in ("day", "dayofmonth"):
+        return f"EXTRACT(DAY FROM CAST({a(0)} AS TIMESTAMP))"
+    if name == "hour":
+        return f"EXTRACT(HOUR FROM CAST({a(0)} AS TIMESTAMP))"
+    if name == "minute":
+        return f"EXTRACT(MINUTE FROM CAST({a(0)} AS TIMESTAMP))"
+    if name == "second":
+        return f"EXTRACT(SECOND FROM CAST({a(0)} AS TIMESTAMP))"
+
+    # Numeric
+    if name == "abs":
+        return f"ABS({a(0)})"
+    if name == "round":
+        return f"ROUND({a(0)})" if len(args) == 1 else f"ROUND({a(0)}, {a(1)})"
+    if name == "floor":
+        return f"FLOOR({a(0)})"
+    if name in ("ceil", "ceiling"):
+        return f"CEIL({a(0)})"
+    if name == "add":
+        return f"({a(0)} + {a(1)})"
+    if name == "sub":
+        return f"({a(0)} - {a(1)})"
+    if name == "mul":
+        return f"({a(0)} * {a(1)})"
+    if name == "div":
+        return f"({a(0)} / {a(1)})"
+    if name == "mod":
+        return f"({a(0)} % {a(1)})"
+
+    # Misc
+    if name == "coalesce":
+        if not args:
+            raise CompileError("coalesce() needs at least one argument")
+        return "COALESCE(" + ", ".join(_sql_expr(x) for x in args) + ")"
+
+    # Pass-through aggregates / unknown SQL-like names
+    rendered_args = ", ".join(
+        "*" if isinstance(x, ra.ColumnRef) and x.name == "*" else _sql_expr(x)
+        for x in args
+    )
+    return f"{name.upper()}({rendered_args})"
 
 
 def _rewrite_join_expr(node: object, left_name: str | None, right_name: str | None, la: str, ra_alias: str) -> object:
@@ -84,6 +201,21 @@ def _rewrite_join_expr(node: object, left_name: str | None, right_name: str | No
             args=[
                 _rewrite_join_expr(a, left_name, right_name, la, ra_alias) for a in node.args
             ],
+        )
+    if isinstance(node, ra.CaseExpr):
+        return ra.CaseExpr(
+            whens=[
+                (
+                    _rewrite_join_expr(c, left_name, right_name, la, ra_alias),
+                    _rewrite_join_expr(r, left_name, right_name, la, ra_alias),
+                )
+                for c, r in node.whens
+            ],
+            else_result=(
+                _rewrite_join_expr(node.else_result, left_name, right_name, la, ra_alias)
+                if node.else_result is not None
+                else None
+            ),
         )
     return node
 
@@ -137,11 +269,18 @@ class SqlCompiler:
         return f"{prefix}{self._alias}"
 
     def compile(self, node: ra.RANode) -> str:
-        assignments: list[tuple[str, ra.RANode]] = getattr(node, "_assignments", []) or []
+        assignments: list[tuple[str, ra.RANode]] = []
+        result = node
+        if isinstance(node, ra.Statement):
+            assignments = list(node.assignments or [])
+            result = node.result
+        else:
+            assignments = list(getattr(node, "_assignments", None) or [])
+
         with_parts: list[str] = []
         for name, expr in assignments:
             with_parts.append(f"{_quote_ident(name)} AS ({self._compile(expr)})")
-        body = self._compile(node)
+        body = self._compile(result)
         root = f"SELECT * FROM ({body}) AS {_quote_ident(self._next_alias('root'))}"
         if with_parts:
             return "WITH " + ", ".join(with_parts) + " " + root
@@ -172,6 +311,12 @@ class SqlCompiler:
             child_sql = self._compile(node.child)
             alias = self._next_alias()
             cond = _sql_expr(node.condition)
+            if _expr_contains_rownum(node.condition):
+                # DuckDB QUALIFY allows window functions in filters.
+                return (
+                    f"SELECT * FROM ({child_sql}) AS {_quote_ident(alias)} "
+                    f"QUALIFY {cond}"
+                )
             return f"SELECT * FROM ({child_sql}) AS {_quote_ident(alias)} WHERE {cond}"
 
         if isinstance(node, ra.RenameRelation):

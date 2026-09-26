@@ -26,21 +26,25 @@ def _norm_compare(op: str) -> str:
 
 @v_args(inline=True)
 class RelAlgTransformer(Transformer):
-    def statement(self, *parts: object) -> ra.RANode:
-        # assignments? expr — if assignments present, wrap via sequential renames not needed;
-        # for MVP we only return the final expr (assignments executed as CTE-like in compiler later).
-        if len(parts) == 1:
-            return parts[0]  # type: ignore[return-value]
-        assignments, expr = parts
-        # Attach assignments metadata via a simple approach: store on a wrapper
-        node = expr
-        if isinstance(assignments, list) and assignments:
-            # Represent as nested With-like by converting to Views in compiler via Attribute
-            setattr(node, "_assignments", assignments)
-        return node  # type: ignore[return-value]
+    def statement_expr(self, expr: ra.RANode) -> ra.Statement:
+        return ra.Statement(result=expr, assignments=None)
 
-    def assignments(self, *items: tuple[str, ra.RANode]) -> list:
-        return list(items)
+    def statement_with_expr(self, *parts: object) -> ra.Statement:
+        *assigns, expr = parts
+        assignments = [a for a in assigns if isinstance(a, tuple)]
+        if not isinstance(expr, ra.RANode):
+            raise RelAlgParseError("Invalid RelAlg expression")
+        return ra.Statement(result=expr, assignments=assignments)
+
+    def statement_assignments_only(self, *assigns: object) -> ra.Statement:
+        assignments = [a for a in assigns if isinstance(a, tuple)]
+        if not assignments:
+            raise RelAlgParseError("Expected at least one assignment")
+        last_name = assignments[-1][0]
+        return ra.Statement(
+            result=ra.Relation(name=last_name),
+            assignments=assignments,
+        )
 
     def assignment(self, name: Token, expr: ra.RANode) -> tuple[str, ra.RANode]:
         return (str(name), expr)
@@ -219,6 +223,9 @@ class RelAlgTransformer(Transformer):
     def or_expr(self, left: object, _op: Token, right: object) -> ra.BinaryExpr:
         return ra.BinaryExpr(op="or", left=left, right=right)
 
+    def xor_expr(self, left: object, _op: Token, right: object) -> ra.BinaryExpr:
+        return ra.BinaryExpr(op="xor", left=left, right=right)
+
     def not_expr(self, _op: Token, operand: object) -> ra.UnaryExpr:
         return ra.UnaryExpr(op="not", operand=operand)
 
@@ -233,6 +240,9 @@ class RelAlgTransformer(Transformer):
 
     def div(self, left: object, _op: Token, right: object) -> ra.BinaryExpr:
         return ra.BinaryExpr(op="/", left=left, right=right)
+
+    def mod(self, left: object, _op: Token, right: object) -> ra.BinaryExpr:
+        return ra.BinaryExpr(op="%", left=left, right=right)
 
     def number(self, tok: Token) -> ra.Literal:
         text = str(tok)
@@ -257,6 +267,26 @@ class RelAlgTransformer(Transformer):
     def func_call_agg(self, name: Token, arg: object) -> ra.FuncCall:
         return ra.FuncCall(name=str(name).lower(), args=[arg])
 
+    def case_when(self, _when: Token, cond: object, _then: Token, result: object) -> tuple:
+        return (cond, result)
+
+    def case_else(self, _else: Token, result: object) -> object:
+        return result
+
+    def case_expr(self, _case: Token, *parts: object) -> ra.CaseExpr:
+        whens: list[tuple[object, object]] = []
+        else_result: object | None = None
+        for p in parts:
+            if isinstance(p, Token):
+                continue  # END
+            if isinstance(p, tuple) and len(p) == 2:
+                whens.append(p)  # type: ignore[arg-type]
+            else:
+                else_result = p
+        if not whens:
+            raise RelAlgParseError("CASE needs at least one WHEN … THEN …")
+        return ra.CaseExpr(whens=whens, else_result=else_result)
+
     def expr_list(self, *items: object) -> list:
         return list(items)
 
@@ -279,9 +309,11 @@ def parse_relalg(query: str) -> ra.RANode:
         result = RelAlgTransformer().transform(tree)
         if isinstance(result, Tree):
             raise RelAlgParseError("Invalid RelAlg expression")
-        if not isinstance(result, ra.RANode):
-            raise RelAlgParseError("Invalid RelAlg expression")
-        return result
+        if isinstance(result, ra.Statement):
+            return result
+        if isinstance(result, ra.RANode):
+            return ra.Statement(result=result, assignments=None)
+        raise RelAlgParseError("Invalid RelAlg expression")
     except LarkError as exc:
         raise RelAlgParseError(str(exc)) from exc
     except RelAlgParseError:

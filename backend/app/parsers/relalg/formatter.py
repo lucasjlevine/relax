@@ -19,6 +19,14 @@ def _fmt_expr(node: object) -> str:
     if isinstance(node, ra.FuncCall):
         args = ", ".join(_fmt_expr(a) for a in node.args)
         return f"{node.name}({args})"
+    if isinstance(node, ra.CaseExpr):
+        parts = ["CASE"]
+        for cond, result in node.whens:
+            parts.append(f"WHEN {_fmt_expr(cond)} THEN {_fmt_expr(result)}")
+        if node.else_result is not None:
+            parts.append(f"ELSE {_fmt_expr(node.else_result)}")
+        parts.append("END")
+        return " ".join(parts)
     if isinstance(node, ra.BinaryExpr):
         op = {"and": "∧", "or": "∨", "!=": "≠", "<=": "≤", ">=": "≥"}.get(
             node.op, node.op
@@ -38,6 +46,27 @@ def _indent(text: str, level: int) -> str:
 
 def format_relalg(node: ra.RANode, *, level: int = 0, multiline: bool = True) -> str:
     """Pretty-print RelAlg using classical subscript notation."""
+
+    if isinstance(node, ra.Statement):
+        parts: list[str] = []
+        assigns = node.assignments or []
+        for name, expr in assigns:
+            body = format_relalg(expr, level=0, multiline=multiline)
+            if "\n" in body:
+                parts.append(f"{name} =\n{_indent(body, 1)}")
+            else:
+                parts.append(f"{name} = {body}")
+        # If result is just the last assignment name, omit a redundant trailing line.
+        if (
+            assigns
+            and isinstance(node.result, ra.Relation)
+            and node.result.name == assigns[-1][0]
+        ):
+            return "\n\n".join(parts)
+        result_s = format_relalg(node.result, level=0, multiline=multiline)
+        if parts:
+            return "\n\n".join(parts) + "\n\n" + result_s
+        return result_s
 
     def wrap_sub(op: str, sub: str, child: ra.RANode) -> str:
         child_s = format_relalg(child, level=level + 1, multiline=multiline)

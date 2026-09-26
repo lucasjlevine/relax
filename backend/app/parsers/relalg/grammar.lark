@@ -5,9 +5,12 @@
 
 ?start: statement
 
-statement: assignments? expr
+// Assignments alone: last name is the result (RelaX-style step-by-step).
+// Assignments + expr: named temps, then a final expression.
+statement: assignment+                      -> statement_assignments_only
+         | assignment+ expr                 -> statement_with_expr
+         | expr                             -> statement_expr
 
-assignments: assignment+
 assignment: NAME "=" expr
 
 ?expr: binary
@@ -76,12 +79,14 @@ agg_arg: STAR | expr_value
 ?condition: or_cond
 ?or_cond: and_cond
         | or_cond OR_OP and_cond                 -> or_expr
+        | or_cond XOR_OP and_cond                -> xor_expr
 ?and_cond: not_cond
          | and_cond AND_OP not_cond              -> and_expr
 ?not_cond: NOT_OP not_cond                       -> not_expr
          | compare
 ?compare: expr_value COMPARE_OP expr_value       -> comparison
         | expr_value LIKE_OP expr_value          -> like_expr
+        | expr_value
         | "(" condition ")"
 
 ?expr_value: sum
@@ -91,13 +96,19 @@ agg_arg: STAR | expr_value
 ?product: primary_val
         | product MUL_OP primary_val             -> mul
         | product DIV_ARITH primary_val          -> div
+        | product MOD_OP primary_val             -> mod
 ?primary_val: NUMBER                             -> number
             | STRING                             -> string
             | NULL                               -> null
+            | case_expr
             | AGG_FN "(" agg_arg ")"             -> func_call_agg
             | NAME "(" expr_list? ")"            -> func_call
             | column_ref
             | "(" expr_value ")"
+
+case_expr: CASE case_when+ case_else? END
+case_when: WHEN condition THEN expr_value
+case_else: ELSE expr_value
 
 expr_list: expr_value ("," expr_value)*
 
@@ -127,9 +138,15 @@ DIV_OP.3: "÷" | /division/i
 ON.3: /on/i
 AND_OP.3: "∧" | /and/i
 OR_OP.3: "∨" | /or/i
+XOR_OP.3: /xor/i
 NOT_OP.3: "¬" | /not/i
 NULL.3: /null/i
 LIKE_OP.3: /like/i | /ilike/i
+CASE.4: /case/i
+WHEN.4: /when/i
+THEN.4: /then/i
+ELSE.4: /else/i
+END.4: /end/i
 AGG_FN.3: /count/i | /sum/i | /avg/i | /min/i | /max/i
 ORDER_DIR.3: /asc/i | /desc/i
 STAR: "*"
@@ -140,6 +157,7 @@ ADD_OP: "+"
 SUB_OP: "-"
 MUL_OP: "*"
 DIV_ARITH: "/"
+MOD_OP: "%"
 SUB_OPEN.5: "_{" | "["
 SUB_CLOSE.5: "}" | "]"
 

@@ -15,10 +15,14 @@ Switching modes loads that dataset’s example query (when present).
 
 - Classical subscripts: `π_{name}(σ_{dept = 'Engineering'}(Employee))`
 - Prefix / RelaX style: `pi name (sigma dept = 'Engineering' (Employee))`
+- **Assignments:** `A = π_{…}(R)` then reuse `A` (last assignment is the result if there is no trailing expression)
 - **Format** converts prefix → classical subscripts (with indentation for nesting)
-- Toolbar inserts common operators; place the cursor where the subscript should go
+- Toolbar inserts common operators; the cursor badge shows line:column and whether you are in π/σ/… subscripts (or on a relation / attribute / function)
+- Autocomplete suggests relations, attributes, and helper functions
+- **Functions** in the calculator header lists helpers (`rownum()`, `length()`, `CASE WHEN …`, …)
 - Shortcut: **Ctrl/Cmd + Enter** to execute
 
+Helper functions: [functions.md](./functions.md)  
 Full operator table: [relalg-syntax.md](./relalg-syntax.md)
 
 ## Built-in datasets
@@ -42,7 +46,7 @@ In the calculator left panel:
 3. **Upload** — `.csv` / `.db` / `.sqlite` as a new dataset  
 4. **Build** — define columns and cells without writing a file  
 
-**Sidebar tip:** drag the right edge of the left panel to widen it. Opening **Manage** auto-expands the panel; width is remembered in the browser. Wide tables scroll horizontally.
+**Sidebar tip:** Opening **Manage** auto-expands the left panel; drag its right edge to resize. Width is remembered in the browser. Wide tables scroll horizontally.
 
 Edits to built-in datasets apply for the current API process (in-memory). Uploaded/built datasets behave the same until the backend restarts.
 
@@ -53,6 +57,9 @@ After **Execute**:
 - Scrollable result table  
 - Compact operator tree (narrow column on the right)  
 - **CSV** download of the current result page  
+- Entry added to **History** (browser-local) for reuse  
+
+Dataset selection and the editor query are restored after a page reload.
 
 ## Scope boundaries
 
@@ -64,6 +71,7 @@ After **Execute**:
 | Doc | Audience |
 |-----|----------|
 | [user-guide.md](./user-guide.md) (this file) | Using the calculator |
+| [functions.md](./functions.md) | Expression helper functions |
 | [relalg-syntax.md](./relalg-syntax.md) | Operator / syntax reference |
 | [api.md](./api.md) | HTTP API |
 | [architecture.md](./architecture.md) | How the engine is wired |

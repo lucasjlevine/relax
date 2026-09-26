@@ -5,35 +5,39 @@ from app.parsers.relalg import ast as ra
 from app.engine.compiler import compile_relalg
 
 
+def _root(node: ra.RANode) -> ra.RANode:
+    return node.result if isinstance(node, ra.Statement) else node
+
+
 def test_parse_selection_projection():
-    node = parse_relalg("pi a (sigma a > 1 (R))")
+    node = _root(parse_relalg("pi a (sigma a > 1 (R))"))
     assert isinstance(node, ra.Projection)
     assert isinstance(node.child, ra.Selection)
 
 
 def test_parse_unicode_ops():
-    node = parse_relalg("π a (σ a > 1 (R))")
+    node = _root(parse_relalg("π a (σ a > 1 (R))"))
     assert isinstance(node, ra.Projection)
 
 
 def test_parse_natural_join():
-    node = parse_relalg("R join S")
+    node = _root(parse_relalg("R join S"))
     assert isinstance(node, ra.NaturalJoin)
 
 
 def test_parse_theta_join():
-    node = parse_relalg("R join S on a = d")
+    node = _root(parse_relalg("R join S on a = d"))
     assert isinstance(node, ra.ThetaJoin)
 
 
 def test_parse_set_ops():
-    assert isinstance(parse_relalg("R union S"), ra.Union)
-    assert isinstance(parse_relalg("R intersect S"), ra.Intersect)
-    assert isinstance(parse_relalg("R except S"), ra.Except)
+    assert isinstance(_root(parse_relalg("R union S")), ra.Union)
+    assert isinstance(_root(parse_relalg("R intersect S")), ra.Intersect)
+    assert isinstance(_root(parse_relalg("R except S")), ra.Except)
 
 
 def test_parse_cross():
-    node = parse_relalg("R cross S")
+    node = _root(parse_relalg("R cross S"))
     assert isinstance(node, ra.Cross)
 
 

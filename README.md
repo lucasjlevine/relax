@@ -46,9 +46,11 @@ docker compose up --build
 |-------|----------------|
 | **Modes** | RelAlg and SQL share one execute → results → tree flow |
 | **Notation** | Unicode subscripts (`π_{…}`) *and* plaintext (`pi …`); **Format** rewrites to classical style |
+| **Helpers** | SQL-like functions in expressions: `rownum()`, `length()`, `date()`, `CASE WHEN …`, … — see [docs/functions.md](docs/functions.md) or **Functions** in the calculator |
 | **Datasets** | Five built-ins: Basics, Joins, SetOps, Aggregates, Library — plus CSV/SQLite upload and in-app builder |
 | **Manage** | Rename/delete datasets, relations, and columns; edit rows; add another relation (or CSV) into the same dataset; drag the left panel wider |
 | **Export** | Download the current result as CSV |
+| **Persistence** | Last dataset + query restored on reload; **History** reuses past executions |
 | **Scope** | RelAlg + SQL only — not BagAlg / TRC / GE |
 
 Full walkthrough: **[docs/user-guide.md](docs/user-guide.md)**
@@ -97,6 +99,7 @@ relax/
 ## Documentation
 
 - [User guide](docs/user-guide.md) — features & UX tips
+- [Helper functions](docs/functions.md) — `rownum()`, dates, strings, …
 - [RelAlg syntax](docs/relalg-syntax.md)
 - [API reference](docs/api.md)
 - [Architecture](docs/architecture.md)

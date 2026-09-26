@@ -18,6 +18,14 @@ class Relation(RANode):
 
 
 @dataclass
+class Statement(RANode):
+    """Top-level query: optional named assignments + a result expression."""
+
+    result: RANode
+    assignments: list[tuple[str, RANode]] | None = None
+
+
+@dataclass
 class Projection(RANode):
     items: list[tuple[Any, str | None]]
     child: RANode
@@ -158,3 +166,11 @@ class UnaryExpr:
 class FuncCall:
     name: str
     args: list[Any]
+
+
+@dataclass
+class CaseExpr:
+    """SQL-style CASE WHEN … THEN … [ELSE …] END."""
+
+    whens: list[tuple[Any, Any]]  # (condition, result)
+    else_result: Any | None = None

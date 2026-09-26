@@ -43,12 +43,16 @@ def validate_sql(query: str) -> str:
     for node in statement.walk():
         if isinstance(node, _FORBIDDEN):
             raise SqlValidationError(
-                f"Statement type not allowed: {type(node).__name__}"
+                "SQL mode only allows SELECT "
+                "(and UNION / INTERSECT / EXCEPT of SELECT statements)."
             )
 
     if not isinstance(statement, (exp.Select, exp.Union, exp.Except, exp.Intersect)):
         # With clause wrapping select is still Select
         if not any(isinstance(n, exp.Select) for n in statement.walk()):
-            raise SqlValidationError("Only SELECT queries are allowed")
+            raise SqlValidationError(
+                "SQL mode only allows SELECT "
+                "(and UNION / INTERSECT / EXCEPT of SELECT statements)."
+            )
 
     return statement.sql(dialect="duckdb")

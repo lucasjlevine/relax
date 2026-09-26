@@ -1,18 +1,27 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
-import { AlignLeft, PanelLeft, Play } from "lucide-react";
+import { AlignLeft, History, PanelLeft, Play } from "lucide-react";
 import {
   formatQuery,
   getDataset,
   listDatasets,
   runQuery,
+  errorTitle,
   type DatasetDetail,
   type DatasetSummary,
   type QueryLanguage,
   type QueryResponse,
 } from "@/lib/api";
+import {
+  loadHistory,
+  loadSession,
+  pushHistory,
+  saveSession,
+  type HistoryEntry,
+} from "@/lib/session";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -25,6 +34,7 @@ import {
 import { OperatorToolbar } from "@/components/calculator/operator-toolbar";
 import { ResultTable } from "@/components/calculator/result-table";
 import { OperatorTreeView } from "@/components/calculator/operator-tree";
+import { FunctionsPanel } from "@/components/calculator/functions-panel";
 
 const SIDEBAR_MIN = 240;
 const SIDEBAR_MAX = 640;
@@ -40,22 +50,100 @@ function clampSidebar(width: number) {
   return Math.min(max, Math.max(SIDEBAR_MIN, width));
 }
 
+function HistoryDropdown({
+  history,
+  anchorRef,
+  onClose,
+  onPick,
+}: {
+  history: HistoryEntry[];
+  anchorRef: React.RefObject<HTMLElement | null>;
+  onClose: () => void;
+  onPick: (h: HistoryEntry) => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    const onClick = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (ref.current?.contains(t)) return;
+      if (anchorRef.current?.contains(t)) return;
+      onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onClick);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("mousedown", onClick);
+    };
+  }, [onClose, anchorRef]);
+
+  if (typeof document === "undefined") return null;
+
+  const rect = anchorRef.current?.getBoundingClientRect();
+  const top = rect ? rect.bottom + 6 : 120;
+  const right = rect ? Math.max(8, window.innerWidth - rect.right) : 16;
+
+  return createPortal(
+    <div
+      ref={ref}
+      style={{ top, right }}
+      className="fixed z-[100] max-h-64 w-[min(24rem,90vw)] overflow-auto rounded-md border bg-card p-1 shadow-xl"
+      role="listbox"
+      aria-label="Query history"
+    >
+      {history.map((h) => (
+        <button
+          key={h.id}
+          type="button"
+          className="block w-full rounded px-2 py-1.5 text-left text-xs hover:bg-muted"
+          onClick={() => onPick(h)}
+        >
+          <span className="font-medium text-foreground">
+            {h.datasetName ?? h.datasetId}
+          </span>
+          <span className="ml-2 uppercase text-muted-foreground">{h.language}</span>
+          <div className="mt-0.5 truncate font-mono text-muted-foreground">
+            {h.query}
+          </div>
+        </button>
+      ))}
+    </div>,
+    document.body,
+  );
+}
+
 export function CalculatorApp() {
   const editorRef = useRef<QueryEditorHandle>(null);
   const languageRef = useRef<QueryLanguage>("relalg");
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
+  const skipNextExample = useRef(false);
   const [datasets, setDatasets] = useState<DatasetSummary[]>([]);
   const [dataset, setDataset] = useState<DatasetDetail | null>(null);
   const [language, setLanguage] = useState<QueryLanguage>("relalg");
   const [query, setQuery] = useState("");
   const [result, setResult] = useState<QueryResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [errorHeading, setErrorHeading] = useState("Couldn’t run query");
   const [loading, setLoading] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [panelTab, setPanelTab] = useState<SchemaPanelTab>("schema");
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [functionsOpen, setFunctionsOpen] = useState(false);
+  const functionsBtnRef = useRef<HTMLButtonElement>(null);
+  const historyBtnRef = useRef<HTMLButtonElement>(null);
+  const booted = useRef(false);
 
   languageRef.current = language;
+
+  useEffect(() => {
+    setHistory(loadHistory());
+  }, []);
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 767px)");
@@ -84,6 +172,15 @@ export function CalculatorApp() {
     }
   }, [sidebarWidth]);
 
+  useEffect(() => {
+    if (!booted.current) return;
+    saveSession({
+      datasetId: dataset?.id ?? null,
+      language,
+      query,
+    });
+  }, [dataset?.id, language, query]);
+
   const applyExample = useCallback(
     (detail: DatasetDetail, lang: QueryLanguage) => {
       if (lang === "sql" && detail.exampleSql) {
@@ -96,11 +193,15 @@ export function CalculatorApp() {
   );
 
   const loadDataset = useCallback(
-    async (id: string) => {
+    async (id: string, opts?: { keepQuery?: boolean }) => {
       const detail = await getDataset(id);
       setDataset(detail);
       setResult(null);
       setError(null);
+      if (opts?.keepQuery || skipNextExample.current) {
+        skipNextExample.current = false;
+        return;
+      }
       applyExample(detail, languageRef.current);
     },
     [applyExample],
@@ -110,9 +211,25 @@ export function CalculatorApp() {
     async (selectId?: string) => {
       const list = await listDatasets();
       setDatasets(list);
-      const id = selectId ?? list[0]?.id;
+      const session = !booted.current ? loadSession() : null;
+      const id =
+        selectId ??
+        (session?.datasetId && list.some((d) => d.id === session.datasetId)
+          ? session.datasetId
+          : list[0]?.id);
+      if (!booted.current && session) {
+        if (session.language === "relalg" || session.language === "sql") {
+          setLanguage(session.language);
+          languageRef.current = session.language;
+        }
+        if (session.query.trim()) {
+          setQuery(session.query);
+          skipNextExample.current = true;
+        }
+      }
+      booted.current = true;
       if (id) {
-        await loadDataset(id);
+        await loadDataset(id, { keepQuery: skipNextExample.current });
       } else {
         setDataset(null);
         setQuery("");
@@ -129,6 +246,7 @@ export function CalculatorApp() {
         await refreshDatasets();
       } catch (err) {
         if (!cancelled) {
+          setErrorHeading(errorTitle(err, "Couldn’t load datasets"));
           setError(err instanceof Error ? err.message : "Failed to load datasets");
         }
       }
@@ -156,8 +274,17 @@ export function CalculatorApp() {
         query,
       });
       setResult(res);
+      setHistory(
+        pushHistory({
+          datasetId: dataset.id,
+          datasetName: dataset.name,
+          language,
+          query: query.trim(),
+        }),
+      );
     } catch (err) {
       setResult(null);
+      setErrorHeading(errorTitle(err));
       setError(err instanceof Error ? err.message : "Query failed");
     } finally {
       setLoading(false);
@@ -171,6 +298,7 @@ export function CalculatorApp() {
       const formatted = await formatQuery({ language, query });
       setQuery(formatted);
     } catch (err) {
+      setErrorHeading(errorTitle(err, "Couldn’t format query"));
       setError(err instanceof Error ? err.message : "Format failed");
     } finally {
       setLoading(false);
@@ -226,6 +354,15 @@ export function CalculatorApp() {
 
   const effectiveWidth = sidebarCollapsed ? 0 : sidebarWidth;
 
+  const schemaHint = dataset
+    ? {
+        relations: dataset.relations.map((r) => ({
+          name: r.name,
+          columns: r.columns.map((c) => ({ name: c.name, type: c.type })),
+        })),
+      }
+    : null;
+
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-[radial-gradient(ellipse_at_top,_#e8f4f2_0%,_hsl(var(--background))_55%)]">
       <header className="flex shrink-0 items-center justify-between border-b bg-card/80 px-4 py-3 backdrop-blur">
@@ -246,7 +383,7 @@ export function CalculatorApp() {
           <Separator orientation="vertical" className="hidden h-5 sm:block" />
           <span className="hidden text-sm text-muted-foreground sm:inline">Calculator</span>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="relative z-40 flex items-center gap-3">
           <Button
             type="button"
             size="sm"
@@ -258,6 +395,22 @@ export function CalculatorApp() {
             <PanelLeft className="h-4 w-4" />
             {sidebarCollapsed ? "Show panel" : "Hide panel"}
           </Button>
+          <button
+            ref={functionsBtnRef}
+            type="button"
+            className="text-sm text-muted-foreground hover:text-foreground"
+            onClick={() => {
+              setFunctionsOpen((o) => !o);
+              setHistoryOpen(false);
+            }}
+          >
+            Functions
+          </button>
+          <FunctionsPanel
+            open={functionsOpen}
+            onClose={() => setFunctionsOpen(false)}
+            anchorRef={functionsBtnRef}
+          />
           <Link
             href="/#guide"
             className="text-sm text-muted-foreground hover:text-foreground"
@@ -333,7 +486,37 @@ export function CalculatorApp() {
                   <TabsTrigger value="sql">SQL</TabsTrigger>
                 </TabsList>
               </Tabs>
-              <div className="flex gap-2">
+              <div className="relative z-30 flex gap-2">
+                <Button
+                  ref={historyBtnRef}
+                  type="button"
+                  variant="outline"
+                  disabled={!history.length}
+                  onClick={() => {
+                    setHistoryOpen((o) => !o);
+                    setFunctionsOpen(false);
+                  }}
+                >
+                  <History className="h-4 w-4" aria-hidden />
+                  History
+                </Button>
+                {historyOpen ? (
+                  <HistoryDropdown
+                    history={history}
+                    anchorRef={historyBtnRef}
+                    onClose={() => setHistoryOpen(false)}
+                    onPick={(h) => {
+                      setLanguage(h.language);
+                      languageRef.current = h.language;
+                      setQuery(h.query);
+                      setHistoryOpen(false);
+                      if (h.datasetId !== dataset?.id) {
+                        skipNextExample.current = true;
+                        void loadDataset(h.datasetId, { keepQuery: true });
+                      }
+                    }}
+                  />
+                ) : null}
                 <Button
                   variant="secondary"
                   onClick={() => void autoformat()}
@@ -362,17 +545,14 @@ export function CalculatorApp() {
               ref={editorRef}
               value={query}
               language={language}
+              schema={schemaHint}
               onChange={setQuery}
               onExecute={() => void execute()}
             />
-            <p className="text-xs text-muted-foreground">
-              Type <code>π_&#123;…&#125;(R)</code> or prefix style — Format rewrites to classical
-              subscripts. Drag the left edge to widen Manage. Shortcut: Ctrl/Cmd + Enter.
-            </p>
 
             {error ? (
               <Alert variant="destructive">
-                <AlertTitle>Error</AlertTitle>
+                <AlertTitle>{errorHeading}</AlertTitle>
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             ) : null}

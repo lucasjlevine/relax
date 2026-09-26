@@ -16,6 +16,10 @@ import {
   createRelalgSubscriptExtension,
   type CursorZone,
 } from "@/lib/relalg-subscript";
+import {
+  createSchemaCompletions,
+  type SchemaHint,
+} from "@/lib/query-completions";
 
 export type QueryEditorHandle = {
   insertAtCursor: (text: string, cursorOffset?: number) => void;
@@ -27,39 +31,32 @@ type Props = {
   language: QueryLanguage;
   onChange: (value: string) => void;
   onExecute: () => void;
+  schema?: SchemaHint | null;
 };
 
-function zoneBadge(zone: CursorZone): { text: string; className: string } {
-  switch (zone.kind) {
+function zoneClass(kind: CursorZone["kind"]): string {
+  switch (kind) {
     case "subscript":
-      return {
-        text: `Subscript · ${zone.content}`,
-        className: "bg-primary/15 text-primary ring-primary/30",
-      };
+      return "bg-primary/15 text-primary ring-primary/30";
     case "before-subscript":
-      return {
-        text: `Before subscript · ${zone.content}`,
-        className: "bg-amber-500/15 text-amber-900 ring-amber-500/30",
-      };
     case "after-subscript":
-      return {
-        text: `After subscript · ${zone.content}`,
-        className: "bg-amber-500/15 text-amber-900 ring-amber-500/30",
-      };
+      return "bg-amber-500/15 text-amber-900 ring-amber-500/30";
     default:
-      return {
-        text: "Main expression",
-        className: "bg-muted text-muted-foreground ring-border",
-      };
+      return "bg-muted text-muted-foreground ring-border";
   }
 }
 
 export const QueryEditor = forwardRef<QueryEditorHandle, Props>(
-  function QueryEditor({ value, language, onChange, onExecute }, ref) {
+  function QueryEditor({ value, language, onChange, onExecute, schema }, ref) {
     const cmRef = useRef<ReactCodeMirrorRef>(null);
+    const schemaRef = useRef<SchemaHint | null>(schema ?? null);
+    schemaRef.current = schema ?? null;
     const [zone, setZone] = useState<CursorZone>({
       kind: "main",
-      label: "Main expression",
+      badge: "1:1 · Main expression",
+      label: "Outside any subscript",
+      line: 1,
+      column: 1,
     });
 
     const onZoneChange = useCallback((next: CursorZone) => {
@@ -89,9 +86,13 @@ export const QueryEditor = forwardRef<QueryEditorHandle, Props>(
 
     const extensions = useMemo(
       () => [
+        createSchemaCompletions(() => schemaRef.current),
         ...(language === "sql"
           ? [sql()]
-          : createRelalgSubscriptExtension(onZoneChange)),
+          : createRelalgSubscriptExtension(
+              onZoneChange,
+              () => schemaRef.current,
+            )),
         EditorView.domEventHandlers({
           keydown(event) {
             if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
@@ -104,43 +105,32 @@ export const QueryEditor = forwardRef<QueryEditorHandle, Props>(
       [language, onExecute, onZoneChange],
     );
 
-    const badge = zoneBadge(zone);
-
     return (
       <div className="overflow-hidden rounded-md border bg-card">
         {language === "relalg" ? (
           <div className="flex items-center justify-between gap-2 border-b bg-muted/40 px-3 py-1.5">
-            <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
-              Cursor
-            </span>
             <span
-              className={`rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ${badge.className}`}
+              className={`max-w-full truncate rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ${zoneClass(zone.kind)}`}
               title={zone.label}
             >
-              {badge.text}
+              {zone.badge}
             </span>
           </div>
         ) : null}
         <CodeMirror
           ref={cmRef}
           value={value}
-          height="240px"
+          height="220px"
           basicSetup={{ lineNumbers: true, foldGutter: false }}
           extensions={extensions}
           onChange={onChange}
           placeholder={
             language === "relalg"
-              ? "π_{a}(σ_{a > 1}(R))   or   pi a (sigma a > 1 (R))"
-              : "SELECT a FROM R WHERE a > 1"
+              ? "π_{name}(σ_{dept = 'Engineering'}(Employee))"
+              : "SELECT name FROM Employee WHERE dept = 'Engineering'"
           }
           className="text-sm"
         />
-        {language === "relalg" ? (
-          <p className="border-t px-3 py-1.5 text-[11px] text-muted-foreground">
-            Click into a subscript to expand <code className="font-mono">_&#123;…&#125;</code>{" "}
-            markers. The badge shows whether you are in the main line or a subscript.
-          </p>
-        ) : null}
       </div>
     );
   },

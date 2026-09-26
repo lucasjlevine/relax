@@ -41,13 +41,32 @@ Boolean expressions in `sigma` and theta-join:
 - Logic: `and` / `∧`, `or` / `∨`, `not` / `¬`
 - Column refs: `a` or `R.a`
 
+## Assignments
+
+Name intermediate results and reuse them (compiled as SQL `WITH` / CTEs). Blank lines between steps are fine. If the query is only assignments, the **last** assigned name is the result:
+
+```text
+EngineerNames = π_{name}(
+  σ_{dept = 'Engineering'}(Employee)
+)
+
+SalesNames = π_{name}(
+  σ_{dept = 'Sales'}(Employee)
+)
+
+SalesAndEngineerNames = EngineerNames ∪ SalesNames
+```
+
+You can also end with a bare expression after the assignments:
+
+```text
+A = σ_{dept = 'Sales'}(Employee)
+π_{name}(A)
+```
+
 ## Comments
 
 SQL-style comments: `-- line` and `/* block */`.
-
-## Assignments (future / limited)
-
-RelaX allows `A = expr` before a final query. MVP focuses on a single expression over named base relations from the loaded dataset.
 
 ## SQL mode
 

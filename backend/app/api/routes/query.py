@@ -9,6 +9,7 @@ from app.models.schemas import (
     QueryRequest,
     QueryResponse,
 )
+from app.engine.messages import humanize_parse_error
 from app.parsers.relalg.formatter import format_relalg_query
 from app.parsers.relalg.parser import RelAlgParseError
 from app.parsers.sql.validator import SqlValidationError, validate_sql
@@ -64,10 +65,19 @@ def format_query(body: FormatRequest) -> FormatResponse:
         return FormatResponse(formatted=formatted)
     except (RelAlgParseError, SqlValidationError) as exc:
         message = getattr(exc, "message", str(exc))
+        lang = body.language if body.language in ("relalg", "sql") else "relalg"
         raise HTTPException(
-            status_code=400, detail={"message": message, "code": "parse_error"}
+            status_code=400,
+            detail={
+                "message": humanize_parse_error(message, language=lang),
+                "code": "parse_error",
+            },
         ) from exc
     except Exception as exc:
         raise HTTPException(
-            status_code=400, detail={"message": str(exc), "code": "format_error"}
+            status_code=400,
+            detail={
+                "message": humanize_parse_error(str(exc), language=body.language),
+                "code": "format_error",
+            },
         ) from exc

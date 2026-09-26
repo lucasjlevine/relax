@@ -13,7 +13,8 @@ DATA_PATH = Path(__file__).resolve().parent.parent / "data" / "local_groups"
 def test_subscript_parse_and_format():
     q = "π_{a}(σ_{a > 1}(R))"
     node = parse_relalg(q)
-    assert isinstance(node, ra.Projection)
+    root = node.result if isinstance(node, ra.Statement) else node
+    assert isinstance(root, ra.Projection)
     assert "π_{a}" in format_relalg_query("pi a (sigma a > 1 (R))")
 
 
@@ -43,6 +44,22 @@ def test_format_api_endpoint():
     )
     assert res.status_code == 200
     assert "π_{" in res.json()["formatted"]
+
+
+def test_format_api_humanizes_parse_errors():
+    from fastapi.testclient import TestClient
+    from app.main import create_app
+
+    client = TestClient(create_app())
+    res = client.post(
+        "/api/format",
+        json={"language": "relalg", "query": "pi ("},
+    )
+    assert res.status_code == 400
+    detail = res.json()["detail"]
+    assert detail["code"] == "parse_error"
+    assert "AGG_FN" not in detail["message"]
+    assert "syntax" in detail["message"].lower() or "early" in detail["message"].lower()
 
 
 def test_csv_upload():

@@ -35,6 +35,28 @@ def _fmt_expr(node: object) -> str:
 
 def build_operator_tree(node: ra.RANode, ids: _IdGen | None = None) -> OperatorTreeNode:
     ids = ids or _IdGen()
+
+    if isinstance(node, ra.Statement):
+        children = []
+        for name, expr in node.assignments or []:
+            children.append(
+                OperatorTreeNode(
+                    id=ids.next(),
+                    label=f"{name} =",
+                    operator="assignment",
+                    children=[build_operator_tree(expr, ids)],
+                )
+            )
+        result_tree = build_operator_tree(node.result, ids)
+        if not children:
+            return result_tree
+        return OperatorTreeNode(
+            id=ids.next(),
+            label="result",
+            operator="statement",
+            children=[*children, result_tree],
+        )
+
     nid = ids.next()
 
     if isinstance(node, ra.Relation):

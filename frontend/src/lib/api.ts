@@ -37,6 +37,28 @@ export type QueryResponse = {
 };
 export type QueryLanguage = "relalg" | "sql";
 
+export type ApiErrorCode =
+  | "validation_error"
+  | "parse_error"
+  | "compile_error"
+  | "execution_error"
+  | "format_error"
+  | "not_found"
+  | "dataset_error"
+  | "upload_error"
+  | "build_error"
+  | "query_error"
+  | string;
+
+export class ApiError extends Error {
+  code: ApiErrorCode;
+  constructor(message: string, code: ApiErrorCode = "query_error") {
+    super(message);
+    this.name = "ApiError";
+    this.code = code;
+  }
+}
+
 export type UploadOptions = {
   relationName?: string;
   hasHeader?: boolean;
@@ -47,6 +69,7 @@ export type UploadOptions = {
 async function handle<T>(res: Response): Promise<T> {
   if (!res.ok) {
     let message = res.statusText;
+    let code: ApiErrorCode = "query_error";
     try {
       const body = await res.json();
       const detail = body?.detail;
@@ -54,18 +77,45 @@ async function handle<T>(res: Response): Promise<T> {
         message = detail;
       } else if (detail?.message) {
         message = detail.message;
+        if (typeof detail.code === "string") code = detail.code;
       } else if (Array.isArray(detail)) {
-        message = detail
-          .map((d: { msg?: string }) => d?.msg)
-          .filter(Boolean)
-          .join("; ") || message;
+        message =
+          detail
+            .map((d: { msg?: string }) => d?.msg)
+            .filter(Boolean)
+            .join("; ") || message;
       }
     } catch {
       /* ignore */
     }
-    throw new Error(typeof message === "string" ? message : "Request failed");
+    throw new ApiError(
+      typeof message === "string" ? message : "Request failed",
+      code,
+    );
   }
   return res.json() as Promise<T>;
+}
+
+export function errorTitle(err: unknown, fallback = "Couldn’t run query"): string {
+  if (!(err instanceof ApiError)) return fallback;
+  switch (err.code) {
+    case "parse_error":
+    case "format_error":
+      return "Syntax error";
+    case "compile_error":
+      return "Couldn’t compile query";
+    case "execution_error":
+      if (/^Unknown (attribute|relation)/i.test(err.message)) {
+        return "Unknown name";
+      }
+      return "Couldn’t run query";
+    case "validation_error":
+      return "Invalid query";
+    case "not_found":
+      return "Not found";
+    default:
+      return fallback;
+  }
 }
 
 export async function listDatasets(): Promise<DatasetSummary[]> {

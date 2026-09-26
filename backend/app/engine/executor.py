@@ -14,11 +14,21 @@ from app.engine.compiler import CompileError, SqlCompiler, _quote_ident
 from app.engine.tree import build_operator_tree
 
 
+from app.engine.messages import humanize_parse_error, humanize_query_error
+
+
 class QueryError(Exception):
     def __init__(self, message: str, code: str = "query_error") -> None:
         super().__init__(message)
         self.message = message
         self.code = code
+
+
+def _raise_exec(exc: Exception, *, language: str) -> None:
+    raise QueryError(
+        humanize_query_error(str(exc), language=language),
+        code="execution_error",
+    ) from exc
 
 
 def _duck_type(logical: str) -> str:
@@ -124,7 +134,7 @@ def execute_sql(
             )
             relation = conn.execute(limited)
         except duckdb.Error as exc:
-            raise QueryError(str(exc), code="execution_error") from exc
+            _raise_exec(exc, language="sql")
         elapsed_ms = (time.perf_counter() - start) * 1000
 
         description = relation.description or []
@@ -156,7 +166,9 @@ def execute_relalg(
         ast = parse_relalg(query)
         tree = build_operator_tree(ast)
     except RelAlgParseError as exc:
-        raise QueryError(exc.message, code="parse_error") from exc
+        raise QueryError(
+            humanize_parse_error(exc.message), code="parse_error"
+        ) from exc
 
     conn = duckdb.connect(database=":memory:")
     try:
@@ -165,7 +177,10 @@ def execute_relalg(
         try:
             sql = SchemaAwareCompiler(conn).compile(ast)
         except CompileError as exc:
-            raise QueryError(exc.message, code="compile_error") from exc
+            raise QueryError(
+                humanize_query_error(exc.message, language="relalg"),
+                code="compile_error",
+            ) from exc
 
         count_sql = f"SELECT COUNT(*) FROM ({sql}) AS _count_sub"
         start = time.perf_counter()
@@ -177,7 +192,7 @@ def execute_relalg(
             )
             relation = conn.execute(limited)
         except duckdb.Error as exc:
-            raise QueryError(str(exc), code="execution_error") from exc
+            _raise_exec(exc, language="relalg")
         elapsed_ms = (time.perf_counter() - start) * 1000
         description = relation.description or []
         columns = [
@@ -207,7 +222,10 @@ def execute_sql_query(
     try:
         sql = validate_sql(query)
     except SqlValidationError as exc:
-        raise QueryError(exc.message, code="parse_error") from exc
+        raise QueryError(
+            humanize_query_error(exc.message, language="sql"),
+            code="parse_error",
+        ) from exc
 
     tree = OperatorTreeNode(
         id="1",

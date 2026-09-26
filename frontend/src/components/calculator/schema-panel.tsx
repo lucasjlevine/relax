@@ -101,11 +101,6 @@ export function SchemaPanel({
             </Button>
           ))}
         </div>
-        {panel === "manage" ? (
-          <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
-            Drag the panel edge to widen it, or scroll horizontally for wide tables.
-          </p>
-        ) : null}
       </div>
 
       <div className="min-h-0 min-w-0 flex-1 overflow-auto p-3">
