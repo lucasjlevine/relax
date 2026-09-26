@@ -113,3 +113,20 @@ class BuildRelationRequest(BaseModel):
     relationName: str
     columns: list[ColumnInfo]
     rows: list[list[Any]]
+
+
+class GroupTextRequest(BaseModel):
+    """RelaX-compatible local_groups source text."""
+
+    text: str
+
+
+class GroupTextResponse(BaseModel):
+    """Serialized group export."""
+
+    text: str
+    filename: str | None = None
+
+
+class GroupPreviewResponse(BaseModel):
+    groups: list[DatasetDetail]

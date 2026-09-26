@@ -29,8 +29,14 @@ export default function HomePage() {
           relax
         </span>
         <nav className="flex items-center gap-4">
+          <Link
+            href="/guide"
+            className="hidden text-sm text-muted-foreground hover:text-foreground sm:inline"
+          >
+            Guide
+          </Link>
           <a
-            href="#guide"
+            href="#about"
             className="hidden text-sm text-muted-foreground hover:text-foreground sm:inline"
           >
             About
@@ -55,7 +61,7 @@ export default function HomePage() {
               <Link href="/calc">Open calculator</Link>
             </Button>
             <Button asChild size="lg" variant="secondary">
-              <a href="#guide">About</a>
+              <Link href="/guide">Read the guide</Link>
             </Button>
           </div>
           <pre className="mt-14 max-w-xl overflow-x-auto font-mono text-sm leading-relaxed text-primary/90">
@@ -66,7 +72,7 @@ export default function HomePage() {
         </section>
 
         <section
-          id="guide"
+          id="about"
           className="border-t border-primary/10 bg-background/60 py-20 backdrop-blur-sm"
         >
           <div className="mx-auto w-full max-w-5xl px-6">
@@ -125,9 +131,11 @@ export default function HomePage() {
                 <Link href="/calc">Try the calculator</Link>
               </Button>
               <p className="max-w-md text-sm text-muted-foreground">
-                Scope is RelAlg + SQL only (no BagAlg or TRC). Open{" "}
-                <strong className="font-medium text-foreground/80">Functions</strong> in
-                the calculator for the expression helper list.
+                Scope is RelAlg + SQL only (no BagAlg or TRC). See the{" "}
+                <Link href="/guide" className="font-medium text-foreground/80 underline-offset-2 hover:underline">
+                  Guide
+                </Link>{" "}
+                for syntax, helpers, and shortcuts.
               </p>
             </div>
           </div>

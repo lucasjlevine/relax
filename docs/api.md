@@ -77,6 +77,17 @@ Upload `.csv` / `.db` / `.sqlite` (multipart form).
 
 Create a dataset from column/row JSON.
 
+## Group Editor (RelaX `local_groups`)
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `POST` | `/api/datasets/group/preview` | Parse group text without installing (`{ "text": "…" }`) |
+| `POST` | `/api/datasets/group/install` | Parse and install all groups from text |
+| `GET` | `/api/datasets/{id}/export` | Export dataset as RelaX-compatible text (`{ text, filename }`) |
+| `GET` | `/api/datasets/{id}/export.txt` | Same export as a downloadable plain-text file |
+
+See [group-editor.md](./group-editor.md) for the text format.
+
 ## `POST /api/query`
 
 Execute RelAlg or SQL against a dataset.

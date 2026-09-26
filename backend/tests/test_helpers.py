@@ -45,6 +45,18 @@ def test_humanize_unexpected_token_no_lark_names():
     assert "NAME" not in msg or "name" in msg.lower()
 
 
+def test_humanize_sql_union_bare_names():
+    raw = (
+        "SQL parse error: Required keyword: 'expression' missing for "
+        "<class 'sqlglot.expressions.query.Union'>. Line 13, Col: 27.\n"
+        "Engineering UNION ALL \x1b[4mSales\x1b[0m"
+    )
+    msg = humanize_query_error(raw, language="sql")
+    assert "SELECT" in msg
+    assert "sqlglot" not in msg.lower()
+    assert "\x1b" not in msg
+
+
 def test_rownum_and_string_helpers():
     group = DatasetCatalog(DATA).get("basics")
     result = execute_relalg(

@@ -133,3 +133,43 @@ def test_build_relation():
     )
     assert res.status_code == 200
     assert res.json()["id"].startswith("custom-")
+
+
+GROUP_TEXT = """
+group: GE demo
+description: from test
+
+exampleRelAlg - {
+  π_{a}(A)
+}
+
+A = {a:number, b:string
+1, hi
+2, bye
+}
+"""
+
+
+def test_group_preview_install_export():
+    from fastapi.testclient import TestClient
+    from app.main import create_app
+
+    client = TestClient(create_app())
+    preview = client.post("/api/datasets/group/preview", json={"text": GROUP_TEXT})
+    assert preview.status_code == 200
+    groups = preview.json()["groups"]
+    assert len(groups) == 1
+    assert groups[0]["name"] == "GE demo"
+    assert groups[0]["relations"][0]["name"] == "A"
+
+    installed = client.post("/api/datasets/group/install", json={"text": GROUP_TEXT})
+    assert installed.status_code == 200
+    gid = installed.json()["groups"][0]["id"]
+    assert gid.startswith("group-")
+
+    exported = client.get(f"/api/datasets/{gid}/export")
+    assert exported.status_code == 200
+    text = exported.json()["text"]
+    assert text.startswith("group:GE demo")
+    assert "A =" in text
+    assert "π_{a}(A)" in text

@@ -27,8 +27,9 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { FilePicker } from "@/components/ui/file-picker";
+import { GroupEditorPanel } from "@/components/calculator/group-editor";
 
-export type SchemaPanelTab = "schema" | "manage" | "upload" | "builder";
+export type SchemaPanelTab = "schema" | "manage" | "upload" | "builder" | "group";
 
 type Props = {
   dataset: DatasetDetail | null;
@@ -39,6 +40,7 @@ type Props = {
   onDatasetCreated: (detail: DatasetDetail) => void;
   onDatasetUpdated: (detail: DatasetDetail) => void;
   onDatasetDeleted: (id: string) => void | Promise<void>;
+  onGroupsInstalled?: (groups: DatasetDetail[]) => void;
 };
 
 const COL_TYPES = ["string", "number", "boolean", "date"] as const;
@@ -52,6 +54,7 @@ export function SchemaPanel({
   onDatasetCreated,
   onDatasetUpdated,
   onDatasetDeleted,
+  onGroupsInstalled,
 }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -88,6 +91,7 @@ export function SchemaPanel({
               ["manage", "Manage"],
               ["upload", "Upload"],
               ["builder", "Build"],
+              ["group", "Group"],
             ] as const
           ).map(([id, label]) => (
             <Button
@@ -103,9 +107,13 @@ export function SchemaPanel({
         </div>
       </div>
 
-      <div className="min-h-0 min-w-0 flex-1 overflow-auto p-3">
+      <div
+        className={`min-h-0 min-w-0 flex-1 p-3 ${
+          panel === "group" ? "flex flex-col overflow-hidden" : "overflow-auto"
+        }`}
+      >
         {error ? (
-          <Alert variant="destructive" className="mb-3">
+          <Alert variant="destructive" className="mb-3 shrink-0">
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         ) : null}
@@ -172,6 +180,19 @@ export function SchemaPanel({
             setError={setError}
             onCreated={(d) => {
               onDatasetCreated(d);
+              switchTab("schema");
+            }}
+          />
+        ) : null}
+
+        {panel === "group" ? (
+          <GroupEditorPanel
+            dataset={dataset}
+            busy={busy}
+            setBusy={setBusy}
+            setError={setError}
+            onInstalled={(groups) => {
+              onGroupsInstalled?.(groups);
               switchTab("schema");
             }}
           />

@@ -32,7 +32,7 @@ npm install
 npm run dev
 ```
 
-App: http://localhost:3000 · Calculator: http://localhost:3000/calc
+App: http://localhost:3000 · Calculator: http://localhost:3000/calc · Guide: http://localhost:3000/guide
 
 ### Docker Compose
 
@@ -90,7 +90,7 @@ WHERE dept = 'Engineering'
 
 ```
 relax/
-├── frontend/     # Next.js UI (landing + /calc)
+├── frontend/     # Next.js UI (landing, /calc, /guide)
 ├── backend/      # FastAPI + DuckDB engine
 ├── docs/         # User guide, syntax, API, architecture
 └── .cursor/rules/
@@ -98,7 +98,7 @@ relax/
 
 ## Documentation
 
-- [User guide](docs/user-guide.md) — features & UX tips
+- [User guide](docs/user-guide.md) — features & UX tips (also in-app at `/guide`)
 - [Helper functions](docs/functions.md) — `rownum()`, dates, strings, …
 - [RelAlg syntax](docs/relalg-syntax.md)
 - [API reference](docs/api.md)

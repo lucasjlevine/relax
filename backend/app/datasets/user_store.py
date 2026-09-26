@@ -244,6 +244,20 @@ class UserDatasetStore:
         )
         return self.add_group(group)
 
+    def from_group_text(self, text: str) -> list[GroupDef]:
+        """Parse RelaX local_groups text and install each group as a user dataset."""
+        from app.datasets.group_format import parse_local_groups
+
+        groups = parse_local_groups(text, materialize=True)
+        installed: list[GroupDef] = []
+        for g in groups:
+            uid = str(uuid.uuid4())[:8]
+            g.id = f"group-{_slug(g.name)}-{uid}"
+            if not g.description:
+                g.description = "Installed from Group Editor"
+            installed.append(self.add_group(g))
+        return installed
+
 
 def _safe_rel_name(stem: str) -> str:
     cleaned = re.sub(r"[^A-Za-z0-9_]", "_", stem)

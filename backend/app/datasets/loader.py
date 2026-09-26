@@ -127,91 +127,11 @@ def _parse_relation_body(body: str) -> tuple[list[ColumnDef], list[list[Any]]]:
     return columns, rows
 
 
-_MULTILINE_HEADER = re.compile(
-    r"^(?P<key>group|description|exampleRelAlg|exampleSql)(?:@[a-z]+)?\s*\[\[(?P<body>.*?)\]\]",
-    re.DOTALL | re.MULTILINE,
-)
-_SINGLE_HEADER = re.compile(
-    r"^(?P<key>group|description|exampleRelAlg|exampleSql)(?:@[a-z]+)?\s*:\s*(?P<body>.+)$",
-    re.MULTILINE,
-)
-_RELATION = re.compile(
-    r"^(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*\{(?P<body>.*?)\}",
-    re.DOTALL | re.MULTILINE,
-)
-
-
 def parse_local_groups(text: str) -> list[GroupDef]:
     """Parse RelaX-compatible local_groups text into GroupDef objects."""
-    # Normalize windows newlines
-    text = text.replace("\r\n", "\n")
+    from app.datasets.group_format import parse_local_groups as _parse
 
-    # Find group start positions via "group:" or "group[["
-    group_starts = [
-        m.start()
-        for m in re.finditer(r"(?m)^group(?:@[a-z]+)?\s*(:|\[\[)", text)
-    ]
-    if not group_starts:
-        raise DatasetError("No groups found in dataset file")
-
-    groups: list[GroupDef] = []
-    for i, start in enumerate(group_starts):
-        end = group_starts[i + 1] if i + 1 < len(group_starts) else len(text)
-        chunk = text[start:end].strip()
-        groups.append(_parse_group_chunk(chunk))
-    return groups
-
-
-def _parse_group_chunk(chunk: str) -> GroupDef:
-    name = ""
-    description = ""
-    example_relalg: str | None = None
-    example_sql: str | None = None
-
-    for match in _MULTILINE_HEADER.finditer(chunk):
-        key = match.group("key")
-        body = match.group("body").strip()
-        if key == "group":
-            name = body
-        elif key == "description":
-            description = body
-        elif key == "exampleRelAlg":
-            example_relalg = body
-        elif key == "exampleSql":
-            example_sql = body
-
-    for match in _SINGLE_HEADER.finditer(chunk):
-        key = match.group("key")
-        body = match.group("body").strip()
-        if key == "group" and not name:
-            name = body
-        elif key == "description" and not description:
-            description = body
-        elif key == "exampleRelAlg" and example_relalg is None:
-            example_relalg = body
-        elif key == "exampleSql" and example_sql is None:
-            example_sql = body
-
-    if not name:
-        raise DatasetError("Group missing name")
-
-    relations: dict[str, RelationDef] = {}
-    for match in _RELATION.finditer(chunk):
-        rel_name = match.group("name")
-        columns, rows = _parse_relation_body(match.group("body"))
-        relations[rel_name] = RelationDef(name=rel_name, columns=columns, rows=rows)
-
-    if not relations:
-        raise DatasetError(f"Group '{name}' has no relations")
-
-    return GroupDef(
-        id=_slugify(name),
-        name=name,
-        description=description,
-        relations=relations,
-        example_relalg=example_relalg,
-        example_sql=example_sql,
-    )
+    return _parse(text, materialize=True)
 
 
 class DatasetCatalog:

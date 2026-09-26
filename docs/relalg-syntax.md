@@ -70,7 +70,22 @@ SQL-style comments: `-- line` and `/* block */`.
 
 ## SQL mode
 
-Standard SELECT subset executed by DuckDB after sqlglot validation:
+Standard SELECT subset executed by DuckDB after sqlglot validation.
+
+Teaching-friendly rewrites (accepted and normalized):
+
+- Multiple consecutive `WITH` blocks → one `WITH` with comma-separated CTEs  
+- Bare `Engineering UNION ALL Sales` → `SELECT * FROM Engineering UNION ALL SELECT * FROM Sales`
+
+```sql
+WITH Engineering AS (
+  SELECT * FROM Employee WHERE dept = 'Engineering'
+)
+WITH Sales AS (
+  SELECT * FROM Employee WHERE dept = 'Sales'
+)
+Engineering UNION ALL Sales
+```
 
 ```sql
 SELECT a, b FROM R WHERE a > 1

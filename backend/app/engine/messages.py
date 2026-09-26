@@ -1,4 +1,4 @@
-"""Turn engine/parser/DuckDB errors into RelAlg/SQL-facing messages."""
+"""Turn engine/parser/DuckDB/sqlglot errors into RelAlg/SQL-facing messages."""
 
 from __future__ import annotations
 
@@ -47,7 +47,16 @@ _TOKEN_WORDS: dict[str, str] = {
     "WS": "whitespace",
     "COMMENT": "a comment",
     "ESCAPED": "an escaped character",
+    "CASE": "CASE",
+    "WHEN": "WHEN",
+    "THEN": "THEN",
+    "ELSE": "ELSE",
+    "END": "END",
 }
+
+
+def _strip_ansi(text: str) -> str:
+    return re.sub(r"\x1b\[[0-9;]*m", "", text)
 
 
 def _friendly_token(name: str) -> str:
@@ -63,7 +72,6 @@ def _extract_expected(text: str) -> list[str]:
         if tok.upper() in ("EXPECTED", "ONE", "OF", "UNEXPECTED"):
             continue
         found.append(tok)
-    # Also match "Expected one of: A, B, C" style
     m = re.search(r"Expected[^:]*:\s*(.+)$", text, re.IGNORECASE | re.DOTALL)
     if m and not found:
         chunk = m.group(1)
@@ -71,7 +79,6 @@ def _extract_expected(text: str) -> list[str]:
             part = part.strip(" *")
             if part and re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", part):
                 found.append(part)
-    # Dedupe while preserving order
     seen: set[str] = set()
     out: list[str] = []
     for t in found:
@@ -93,9 +100,129 @@ def _format_expected(tokens: list[str]) -> str:
     return "Expected one of: " + ", ".join(words[:-1]) + f", or {words[-1]}."
 
 
+def _line_col_hint(text: str) -> str:
+    m = re.search(r"[Ll]ine\s+(\d+)\s*,?\s*[Cc]ol(?:umn)?\s*(\d+)", text)
+    if m:
+        return f" (around line {m.group(1)}, column {m.group(2)})"
+    return ""
+
+
+def _sqlglot_node_name(text: str) -> str | None:
+    m = re.search(
+        r"<class 'sqlglot\.expressions\.[^']*\.(\w+)'>|sqlglot\.expressions[\w.]*\.(\w+)",
+        text,
+    )
+    if not m:
+        return None
+    return m.group(1) or m.group(2)
+
+
+def humanize_sql_syntax_error(raw: str) -> str:
+    """Map sqlglot / SQL parser noise to short student-facing guidance."""
+    original = _strip_ansi(str(raw).strip())
+    text = " ".join(original.split())
+    loc = _line_col_hint(text)
+    node = _sqlglot_node_name(text)
+    lower = text.lower()
+
+    # Already humanized by validator
+    if text.startswith("SQL syntax error:") or text.startswith("SQL mode only"):
+        return text if text.startswith("SQL") else f"SQL syntax error: {text}"
+
+    # Multiple WITH / CTE structure
+    if "with" in lower and (
+        "required keyword" in lower
+        or "missing" in lower
+        or "unexpected" in lower
+        or "invalid" in lower
+    ):
+        if re.search(r"\bwith\b.+\bwith\b", lower) or "second with" in lower:
+            return (
+                "SQL syntax error: use one WITH with comma-separated CTEs, "
+                "not multiple WITH blocks.\n"
+                "Example:\n"
+                "WITH Engineering AS (SELECT * FROM Employee WHERE dept = 'Engineering'),\n"
+                "     Sales AS (SELECT * FROM Employee WHERE dept = 'Sales')\n"
+                "SELECT * FROM Engineering\n"
+                "UNION ALL\n"
+                "SELECT * FROM Sales"
+            )
+
+    # UNION / INTERSECT / EXCEPT need SELECT expressions
+    if node in ("Union", "Intersect", "Except") or re.search(
+        r"\b(union|intersect|except)\b", lower
+    ):
+        if "expression" in lower and ("missing" in lower or "required" in lower):
+            return (
+                "SQL syntax error: each side of UNION / INTERSECT / EXCEPT must be a "
+                "SELECT (not a bare relation name)."
+                f"{loc}\n"
+                "Write:\n"
+                "  SELECT * FROM Engineering\n"
+                "  UNION ALL\n"
+                "  SELECT * FROM Sales\n"
+                "instead of: Engineering UNION ALL Sales"
+            )
+
+    # Generic "Required keyword: 'X' missing for <class ...>"
+    m = re.search(
+        r"Required keyword:\s*'([^']+)'\s*missing for\s*(?:<class '[^']+'>)?",
+        text,
+        re.IGNORECASE,
+    )
+    if m:
+        kw = m.group(1)
+        what = node or "this clause"
+        tip = {
+            "expression": (
+                f"SQL syntax error: a required expression is missing in {what}{loc}. "
+                "For UNION, each side needs SELECT …; for WITH, add a final SELECT after the CTEs."
+            ),
+            "this": (
+                f"SQL syntax error: a required part of {what} is missing{loc}. "
+                "Check parentheses and keywords near that spot."
+            ),
+        }.get(
+            kw.lower(),
+            f"SQL syntax error: missing “{kw}” in {what}{loc}. "
+            "Check the clause structure around that position.",
+        )
+        return tip
+
+    # Unexpected token
+    m = re.search(
+        r"Unexpected token\s+(?:Token\()?['\"]?([^'\"\s,)\]]+)",
+        text,
+        re.IGNORECASE,
+    )
+    if m or "unexpected token" in lower or "invalid expression" in lower:
+        got = m.group(1) if m else None
+        head = (
+            f"SQL syntax error near “{got}”{loc}."
+            if got
+            else f"SQL syntax error{loc}."
+        )
+        return (
+            f"{head} Check for a missing comma between WITH CTEs, "
+            "a missing SELECT after WITH, or a typo in keywords."
+        )
+
+    # Empty / incomplete
+    if "empty" in lower or "no expression" in lower:
+        return "SQL syntax error: the query is empty or incomplete."
+
+    # Strip sqlglot class paths and ANSI leftovers for fallback
+    cleaned = re.sub(r"<class '[^']+'>", "", text)
+    cleaned = re.sub(r"sqlglot\.[\w.]+", "", cleaned)
+    cleaned = re.sub(r"^SQL parse error:\s*", "", cleaned, flags=re.IGNORECASE)
+    cleaned = " ".join(cleaned.split()).strip(" .")
+    if len(cleaned) > 220:
+        cleaned = cleaned[:217] + "…"
+    return f"SQL syntax error{loc}: {cleaned}" if cleaned else f"SQL syntax error{loc}."
+
+
 def humanize_query_error(raw: str, *, language: str = "relalg") -> str:
-    # Preserve newlines briefly for expected-token extraction, then normalize.
-    original = str(raw).strip()
+    original = _strip_ansi(str(raw).strip())
     text = " ".join(original.split())
     if not text:
         return "Something went wrong running this query."
@@ -120,7 +247,8 @@ def humanize_query_error(raw: str, *, language: str = "relalg") -> str:
     if m:
         return (
             f"Unknown relation “{m.group(1)}”. "
-            "Use a relation from the current dataset (see Schema)."
+            "Use a relation from the current dataset (see Schema), "
+            "or a name you defined with WITH / RelAlg assignment."
         )
 
     m = re.search(
@@ -149,11 +277,11 @@ def humanize_query_error(raw: str, *, language: str = "relalg") -> str:
             "(selections with rownum() are rewritten automatically)."
         )
 
-    # SQL forbidden statements
+    # SQL forbidden / mode
     if language == "sql" or "Statement type not allowed" in text:
-        m = re.search(r"Statement type not allowed:\s*(\w+)", text, re.IGNORECASE)
-        if m or "not allowed" in text.lower() and any(
-            x in text.lower() for x in ("insert", "update", "delete", "drop", "create", "alter")
+        if "not allowed" in text.lower() and any(
+            x in text.lower()
+            for x in ("insert", "update", "delete", "drop", "create", "alter", "statement type")
         ):
             return (
                 "SQL mode only allows SELECT "
@@ -165,13 +293,47 @@ def humanize_query_error(raw: str, *, language: str = "relalg") -> str:
                 "(and UNION / INTERSECT / EXCEPT of SELECT statements)."
             )
 
+    # Prefer dedicated SQL syntax humanizer for sqlglot-ish / parse messages
+    sql_parse_markers = (
+        "sqlglot",
+        "Required keyword",
+        "Unexpected token",
+        "SQL parse error",
+        "Invalid expression / Unexpected token",
+        "Invalid expression",
+        "Error tokenizing",
+        "No expression",
+    )
+    if language == "sql" and (
+        any(s.lower() in text.lower() for s in sql_parse_markers)
+        or text.startswith("SQL syntax error")
+        or text.startswith("Could not parse")
+        or text.startswith("Only one SQL")
+        or text.startswith("Query must not")
+    ):
+        if text.startswith(
+            (
+                "SQL syntax error",
+                "SQL mode only",
+                "Query must not",
+                "Only one SQL",
+                "Could not parse this SQL",
+            )
+        ):
+            return original if "\n" in original and len(original) < 600 else text
+        return humanize_sql_syntax_error(original)
+    if language != "sql" and any(s in text for s in ("sqlglot", "SQL parse error")):
+        return humanize_sql_syntax_error(original)
+
     # Lark / RelAlg parse — unexpected end of input
     if re.search(r"Unexpected end[- ]of[- ]input|EOF", text, re.IGNORECASE):
-        expected = _format_expected(_extract_expected(original if "\n" in original else text))
-        lang = "RelAlg" if language == "relalg" else "SQL"
+        expected = _format_expected(
+            _extract_expected(original if "\n" in original else text)
+        )
         base = (
-            f"{lang} syntax error: the expression ends too early. "
-            "Check for a missing relation name, closing parenthesis, or unfinished subscript _{…}."
+            "RelAlg syntax error: the expression ends too early. "
+            "Check for a missing relation name, closing parenthesis, "
+            "or unfinished subscript _{…}."
         )
         return f"{base} {expected}".strip() if expected else base
 
@@ -187,13 +349,18 @@ def humanize_query_error(raw: str, *, language: str = "relalg") -> str:
             re.IGNORECASE,
         )
         got = m.group(1) if m else None
-        expected = _format_expected(_extract_expected(original if "\n" in original else text))
-        lang = "RelAlg" if language == "relalg" else "SQL"
+        expected = _format_expected(
+            _extract_expected(original if "\n" in original else text)
+        )
+        loc = _line_col_hint(text)
         if got and got.upper() not in ("TOKEN", "CHARACTERS"):
-            head = f"{lang} syntax error near “{got}”."
+            head = f"RelAlg syntax error near “{got}”{loc}."
         else:
-            head = f"{lang} syntax error."
-        tip = "Check parentheses, subscripts _{…}, and operator placement."
+            head = f"RelAlg syntax error{loc}."
+        tip = (
+            "Check parentheses, subscripts _{…}, commas between list items, "
+            "and that operators have the right arguments."
+        )
         parts = [head]
         if expected:
             parts.append(expected)
@@ -201,12 +368,10 @@ def humanize_query_error(raw: str, *, language: str = "relalg") -> str:
         return " ".join(parts)
 
     if "Invalid RelAlg" in text:
-        return "That isn’t a complete RelAlg expression. Check operators and parentheses."
-
-    # SQL validation leftovers
-    if language == "sql":
-        cleaned = re.sub(r"^SQL parse error:\s*", "", text, flags=re.IGNORECASE)
-        return f"SQL syntax error. {cleaned}"
+        return (
+            "That isn’t a complete RelAlg expression. "
+            "Check operators, parentheses, and assignment lines (Name = expr)."
+        )
 
     # Strip Python/DuckDB noise prefixes
     text = re.sub(r"^(Parser|Catalog|Binder|Invalid Input) Error:\s*", "", text)

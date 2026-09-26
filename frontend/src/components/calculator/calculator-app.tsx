@@ -32,14 +32,14 @@ import {
   type QueryEditorHandle,
 } from "@/components/calculator/query-editor";
 import { OperatorToolbar } from "@/components/calculator/operator-toolbar";
-import { ResultTable } from "@/components/calculator/result-table";
-import { OperatorTreeView } from "@/components/calculator/operator-tree";
 import { FunctionsPanel } from "@/components/calculator/functions-panel";
+import { ResultsWorkspace } from "@/components/calculator/results-workspace";
 
 const SIDEBAR_MIN = 240;
-const SIDEBAR_MAX = 640;
+const SIDEBAR_MAX = 720;
 const SIDEBAR_DEFAULT = 300;
 const SIDEBAR_MANAGE = 440;
+const SIDEBAR_GROUP = 520;
 const SIDEBAR_STORAGE_KEY = "relax.sidebarWidth";
 
 function clampSidebar(width: number) {
@@ -325,9 +325,10 @@ export function CalculatorApp() {
 
   const onPanelChange = (tab: SchemaPanelTab) => {
     setPanelTab(tab);
-    if (tab === "manage") {
+    if (tab === "manage" || tab === "group") {
       setSidebarCollapsed(false);
-      setSidebarWidth((w) => clampSidebar(Math.max(w, SIDEBAR_MANAGE)));
+      const min = tab === "group" ? SIDEBAR_GROUP : SIDEBAR_MANAGE;
+      setSidebarWidth((w) => clampSidebar(Math.max(w, min)));
     }
   };
 
@@ -412,7 +413,7 @@ export function CalculatorApp() {
             anchorRef={functionsBtnRef}
           />
           <Link
-            href="/#guide"
+            href="/guide"
             className="text-sm text-muted-foreground hover:text-foreground"
           >
             Guide
@@ -465,6 +466,28 @@ export function CalculatorApp() {
                   }
                 }
               }}
+              onGroupsInstalled={(groups) => {
+                for (const g of groups) {
+                  syncDatasetList(g);
+                }
+                const last = groups[groups.length - 1];
+                if (!last) return;
+                setResult(null);
+                setError(null);
+                if (last.exampleRelAlg) {
+                  setLanguage("relalg");
+                  setQuery(last.exampleRelAlg.trim());
+                } else if (last.exampleSql) {
+                  setLanguage("sql");
+                  setQuery(last.exampleSql.trim());
+                } else {
+                  const first = last.relations[0]?.name;
+                  if (first) {
+                    setLanguage("relalg");
+                    setQuery(`π_{*}(${first})`);
+                  }
+                }
+              }}
             />
           </div>
           {!sidebarCollapsed ? (
@@ -478,7 +501,7 @@ export function CalculatorApp() {
         </div>
 
         <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          <div className="shrink-0 space-y-3 border-b p-4">
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto border-b p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <Tabs value={language} onValueChange={onLanguageChange}>
                 <TabsList>
@@ -553,29 +576,14 @@ export function CalculatorApp() {
             {error ? (
               <Alert variant="destructive">
                 <AlertTitle>{errorHeading}</AlertTitle>
-                <AlertDescription>{error}</AlertDescription>
+                <AlertDescription className="whitespace-pre-wrap font-mono text-[13px] leading-relaxed">
+                  {error}
+                </AlertDescription>
               </Alert>
             ) : null}
           </div>
 
-          <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_minmax(140px,0.35fr)] md:grid-cols-[minmax(0,1fr)_220px] md:grid-rows-1">
-            <section className="flex min-h-0 min-w-0 flex-col border-b md:border-b-0 md:border-r">
-              <div className="shrink-0 border-b px-3 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Results
-              </div>
-              <div className="min-h-0 flex-1 overflow-hidden">
-                <ResultTable result={result} />
-              </div>
-            </section>
-            <section className="flex min-h-0 min-w-0 flex-col overflow-hidden">
-              <div className="shrink-0 border-b px-3 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Operator tree
-              </div>
-              <div className="min-h-0 flex-1 overflow-hidden">
-                <OperatorTreeView tree={result?.tree ?? null} />
-              </div>
-            </section>
-          </div>
+          <ResultsWorkspace result={result} />
         </main>
       </div>
     </div>

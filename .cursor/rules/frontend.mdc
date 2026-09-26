@@ -7,7 +7,7 @@ alwaysApply: false
 # Frontend conventions
 
 - Next.js App Router + TypeScript + Shadcn UI.
-- Calculator lives at `/calc`; landing at `/` (features overview + `#guide`).
+- Calculator lives at `/calc`; landing at `/`; in-depth docs at `/guide`.
 - Left dataset panel is resizable; Manage tab auto-widens it.
 - Use Shadcn primitives; keep operator toolbar buttons accessible (`aria-label`).
 - Call the backend via `src/lib/api.ts` and `NEXT_PUBLIC_API_URL`.

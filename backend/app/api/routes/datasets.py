@@ -1,5 +1,7 @@
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import PlainTextResponse
 
+from app.datasets.group_format import format_group_text, parse_local_groups
 from app.datasets.loader import DatasetError
 from app.models.schemas import (
     AddColumnRequest,
@@ -9,6 +11,9 @@ from app.models.schemas import (
     DatasetDetail,
     DatasetListResponse,
     DatasetSummary,
+    GroupPreviewResponse,
+    GroupTextRequest,
+    GroupTextResponse,
     RelationData,
     RelationInfo,
     RenameColumnRequest,
@@ -120,6 +125,59 @@ def build_relation(body: BuildRelationRequest, request: Request) -> DatasetDetai
             status_code=400, detail={"message": str(exc), "code": "build_error"}
         ) from exc
     return _detail_from_group(group)
+
+
+@router.post("/group/preview", response_model=GroupPreviewResponse)
+def preview_group_text(body: GroupTextRequest) -> GroupPreviewResponse:
+    """Parse RelaX local_groups text without installing."""
+    try:
+        groups = parse_local_groups(body.text, materialize=True)
+    except DatasetError as exc:
+        raise HTTPException(
+            status_code=400, detail={"message": str(exc), "code": "group_parse_error"}
+        ) from exc
+    return GroupPreviewResponse(groups=[_detail_from_group(g) for g in groups])
+
+
+@router.post("/group/install", response_model=GroupPreviewResponse)
+def install_group_text(body: GroupTextRequest, request: Request) -> GroupPreviewResponse:
+    """Parse and install all groups from RelaX local_groups text."""
+    users = request.app.state.user_store
+    try:
+        groups = users.from_group_text(body.text)
+    except DatasetError as exc:
+        raise HTTPException(
+            status_code=400, detail={"message": str(exc), "code": "group_parse_error"}
+        ) from exc
+    return GroupPreviewResponse(groups=[_detail_from_group(g) for g in groups])
+
+
+@router.get("/{dataset_id}/export", response_model=GroupTextResponse)
+def export_dataset(dataset_id: str, request: Request) -> GroupTextResponse:
+    """Export a dataset as RelaX-compatible local_groups text."""
+    catalog = request.app.state.catalog
+    try:
+        group = catalog.get(dataset_id)
+    except DatasetError as exc:
+        raise _http_dataset_error(exc, not_found=True) from exc
+    text = format_group_text(group)
+    return GroupTextResponse(text=text, filename=f"{group.id}.txt")
+
+
+@router.get("/{dataset_id}/export.txt")
+def export_dataset_plain(dataset_id: str, request: Request) -> PlainTextResponse:
+    catalog = request.app.state.catalog
+    try:
+        group = catalog.get(dataset_id)
+    except DatasetError as exc:
+        raise _http_dataset_error(exc, not_found=True) from exc
+    return PlainTextResponse(
+        format_group_text(group),
+        media_type="text/plain; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{group.id}.txt"',
+        },
+    )
 
 
 @router.get("/{dataset_id}", response_model=DatasetDetail)

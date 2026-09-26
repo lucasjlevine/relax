@@ -2,7 +2,8 @@
 
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { sql } from "@codemirror/lang-sql";
-import { EditorView } from "@codemirror/view";
+import { keymap, EditorView } from "@codemirror/view";
+import { toggleComment } from "@codemirror/commands";
 import {
   forwardRef,
   useCallback,
@@ -20,6 +21,8 @@ import {
   createSchemaCompletions,
   type SchemaHint,
 } from "@/lib/query-completions";
+import { relalg } from "@/lib/relalg-language";
+import { editorHighlight } from "@/lib/editor-theme";
 
 export type QueryEditorHandle = {
   insertAtCursor: (text: string, cursorOffset?: number) => void;
@@ -86,13 +89,18 @@ export const QueryEditor = forwardRef<QueryEditorHandle, Props>(
 
     const extensions = useMemo(
       () => [
+        ...editorHighlight,
         createSchemaCompletions(() => schemaRef.current),
+        keymap.of([{ key: "Mod-/", run: toggleComment }]),
         ...(language === "sql"
           ? [sql()]
-          : createRelalgSubscriptExtension(
-              onZoneChange,
-              () => schemaRef.current,
-            )),
+          : [
+              relalg(),
+              ...createRelalgSubscriptExtension(
+                onZoneChange,
+                () => schemaRef.current,
+              ),
+            ]),
         EditorView.domEventHandlers({
           keydown(event) {
             if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {

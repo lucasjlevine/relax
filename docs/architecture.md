@@ -19,20 +19,20 @@ FastAPI
 1. **RelaX-compatible RelAlg syntax** — plaintext keywords (`sigma`, `pi`, `join`) and unicode symbols (`σ`, `π`, `⋈`), including classical subscripts.
 2. **DuckDB as execution engine** — fast columnar queries on educational datasets.
 3. **Educational, not production DB** — queries with row limits; in-memory mutable catalog for teaching edits.
-4. **RelAlg + SQL only** — BagAlg / TRC / GE are out of scope unless explicitly requested.
+4. **RelAlg + SQL only** — BagAlg / TRC are out of scope unless explicitly requested. Group Editor is in scope and RelaX format-compatible.
 
 ## Frontend
 
 - App Router pages: `/` (landing + guide), `/calc` (calculator)
-- Resizable dataset sidebar (Manage auto-expands)
-- Shadcn primitives + CodeMirror editor
-- Calls `NEXT_PUBLIC_API_URL` for datasets, mutations, and query execution
+- Resizable dataset sidebar (Manage / Group auto-expand)
+- Shadcn primitives + CodeMirror editor (query + Group Editor)
+- Calls `NEXT_PUBLIC_API_URL` for datasets, mutations, group install/preview, and query execution
 
 ## Backend
 
 | Package | Role |
 |---------|------|
-| `app.datasets` | Built-in `local_groups`, `WorkingCatalog` mutations, user uploads |
+| `app.datasets` | Built-in `local_groups`, RelaX group parse/serialize, `WorkingCatalog` mutations, user uploads |
 | `app.parsers.relalg` | Lark grammar → AST + formatter |
 | `app.parsers.sql` | sqlglot validation |
 | `app.engine` | Compile AST / SQL to DuckDB, build operator tree |

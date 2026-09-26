@@ -429,6 +429,38 @@ export async function buildRelation(input: {
   );
 }
 
+export async function previewGroupText(text: string): Promise<DatasetDetail[]> {
+  const data = await handle<{ groups: DatasetDetail[] }>(
+    await fetch(`${API_URL}/api/datasets/group/preview`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    }),
+  );
+  return data.groups;
+}
+
+export async function installGroupText(text: string): Promise<DatasetDetail[]> {
+  const data = await handle<{ groups: DatasetDetail[] }>(
+    await fetch(`${API_URL}/api/datasets/group/install`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    }),
+  );
+  return data.groups;
+}
+
+export async function exportDatasetText(
+  datasetId: string,
+): Promise<{ text: string; filename: string | null }> {
+  return handle<{ text: string; filename: string | null }>(
+    await fetch(`${API_URL}/api/datasets/${datasetId}/export`, {
+      cache: "no-store",
+    }),
+  );
+}
+
 export function resultsToCsv(result: QueryResponse): string {
   const escape = (value: unknown): string => {
     if (value === null || value === undefined) return "";
