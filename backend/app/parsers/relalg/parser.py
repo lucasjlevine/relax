@@ -205,6 +205,16 @@ class RelAlgTransformer(Transformer):
             return ra.NaturalJoin(left=left, right=right)
         return ra.ThetaJoin(left=left, right=right, condition=on)
 
+    def join_kind_sub(
+        self,
+        left: ra.RANode,
+        kind: Token,
+        on: object,
+        right: ra.RANode,
+    ) -> ra.RANode:
+        """RelaX classical form: R ⋈_{cond} S"""
+        return self.join_kind(left, kind, right, on)
+
     def join_on(self, *args: object) -> object:
         for a in args:
             if not isinstance(a, Token):

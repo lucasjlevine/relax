@@ -50,12 +50,26 @@ Schema and relation metadata for one group.
 }
 ```
 
+## Dataset ownership & persistence
+
+User-created datasets (upload, build, Group Editor install, and forks of built-ins) are stored on the server as JSON under `data/user_datasets/`.
+
+- **Owner cookie:** `relax_owner` (HttpOnly). Set automatically on first API request. No accounts.
+- **List:** `GET /api/datasets` returns built-ins plus datasets owned by the cookie. Others’ datasets are never listed.
+- **Access by id:** Knowing an unguessable `ds_…` id is enough to `GET` / query it (security = obscurity + list filtering).
+- **Fork on edit:** Mutating a built-in (`PATCH`, row edits, …) creates a personal copy (`forkedFrom`) and returns the new id. Built-in templates on disk stay unchanged.
+- **Share:** Each owned dataset has a `shareToken`.  
+  - `GET /api/datasets/share/{token}` — preview  
+  - `POST /api/datasets/share/{token}/copy` — clone into the caller’s library  
+
+Browser clients must send cookies (`credentials: "include"`).
+
 ## Dataset management
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| `PATCH` | `/api/datasets/{id}` | Rename dataset (`{ "name": "..." }`) |
-| `DELETE` | `/api/datasets/{id}` | Delete dataset |
+| `PATCH` | `/api/datasets/{id}` | Rename dataset (`{ "name": "..." }`). Built-ins fork. |
+| `DELETE` | `/api/datasets/{id}` | Delete dataset (built-in: hide for this process; user: remove from disk) |
 | `POST` | `/api/datasets/{id}/upload` | Add CSV as a new relation in this dataset |
 | `POST` | `/api/datasets/{id}/relations` | Add relation (`relationName`, `columns`, `rows`) |
 | `GET` | `/api/datasets/{id}/relations/{name}` | Relation columns + rows |
@@ -68,6 +82,8 @@ Schema and relation metadata for one group.
 | `PUT` | `/api/datasets/{id}/relations/{name}/rows` | Replace all rows |
 | `PUT` | `/api/datasets/{id}/relations/{name}/rows/{i}` | Update row |
 | `DELETE` | `/api/datasets/{id}/relations/{name}/rows/{i}` | Delete row |
+| `GET` | `/api/datasets/share/{token}` | Preview a shared user dataset |
+| `POST` | `/api/datasets/share/{token}/copy` | Copy a shared dataset into the caller’s library |
 
 ## `POST /api/datasets/upload`
 
@@ -106,11 +122,22 @@ Execute RelAlg or SQL against a dataset.
 
 `language`: `"relalg"` | `"sql"`
 
+RelAlg may contain multiple statements separated by `;`. The response includes a `results` array (one block per statement). Top-level `columns` / `rows` / `tree` mirror the **last** statement for compatibility.
+
+When a query implies a different type, the server converts and **persists** that column’s type on the dataset, and lists the change in `typeChanges` / `warnings`. If the dataset was a built-in, it is forked first (`datasetId` may change).
+
+Triggers include:
+
+- Comparisons to typed literals (e.g. string `Movie.year < 1960` → number)
+- Numeric aggregates `sum` / `avg` / `min` / `max` (e.g. `avg(Ratings.rev_stars)` → number)
+- Numeric helpers (`abs`, `round`, `floor`, `ceil`, `add`/`sub`/`mul`/`div`/`mod`) and arithmetic (`+`, `-`, `*`, `/`, `%`)
+- Date helpers (`date`, `adddate`, `subdate`)
+
 ### Success response
 
 ```json
 {
-  "columns": [{ "name": "name", "type": "VARCHAR" }],
+  "columns": [{ "name": "name", "type": "string" }],
   "rows": [["Ana"], ["Cara"]],
   "rowCount": 2,
   "executionMs": 1.2,
@@ -120,7 +147,21 @@ Execute RelAlg or SQL against a dataset.
     "operator": "projection",
     "children": []
   },
-  "warnings": []
+  "warnings": [],
+  "results": [
+    {
+      "index": 0,
+      "label": null,
+      "columns": [{ "name": "name", "type": "string" }],
+      "rows": [["Ana"], ["Cara"]],
+      "rowCount": 2,
+      "executionMs": 1.2,
+      "tree": { "id": "1", "label": "π name", "operator": "projection", "children": [] },
+      "warnings": []
+    }
+  ],
+  "datasetId": "basics",
+  "typeChanges": []
 }
 ```
 

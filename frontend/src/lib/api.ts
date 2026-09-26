@@ -10,11 +10,15 @@ export type DatasetSummary = {
   id: string;
   name: string;
   description: string;
+  owned?: boolean;
+  isBuiltin?: boolean;
 };
 export type DatasetDetail = DatasetSummary & {
   relations: RelationInfo[];
   exampleRelAlg?: string | null;
   exampleSql?: string | null;
+  shareToken?: string | null;
+  forkedFrom?: string | null;
 };
 export type RelationData = {
   name: string;
@@ -27,6 +31,22 @@ export type OperatorTreeNode = {
   operator: string;
   children: OperatorTreeNode[];
 };
+export type QueryResultBlock = {
+  index: number;
+  label?: string | null;
+  columns: ColumnInfo[];
+  rows: unknown[][];
+  rowCount: number;
+  executionMs: number;
+  tree: OperatorTreeNode | null;
+  warnings: string[];
+};
+export type TypeChangeInfo = {
+  relation: string;
+  column: string;
+  fromType: string;
+  toType: string;
+};
 export type QueryResponse = {
   columns: ColumnInfo[];
   rows: unknown[][];
@@ -34,6 +54,9 @@ export type QueryResponse = {
   executionMs: number;
   tree: OperatorTreeNode | null;
   warnings: string[];
+  results?: QueryResultBlock[];
+  datasetId?: string | null;
+  typeChanges?: TypeChangeInfo[];
 };
 export type QueryLanguage = "relalg" | "sql";
 
@@ -65,6 +88,14 @@ export type UploadOptions = {
   skipRows?: number;
   delimiter?: string;
 };
+
+async function apiFetch(input: string, init: RequestInit = {}): Promise<Response> {
+  return fetch(input, {
+    ...init,
+    credentials: "include",
+    cache: init.cache ?? "no-store",
+  });
+}
 
 async function handle<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -120,15 +151,37 @@ export function errorTitle(err: unknown, fallback = "Couldn’t run query"): str
 
 export async function listDatasets(): Promise<DatasetSummary[]> {
   const data = await handle<{ datasets: DatasetSummary[] }>(
-    await fetch(`${API_URL}/api/datasets`, { cache: "no-store" }),
+    await apiFetch(`${API_URL}/api/datasets`, { cache: "no-store" }),
   );
   return data.datasets;
 }
 
 export async function getDataset(id: string): Promise<DatasetDetail> {
   return handle<DatasetDetail>(
-    await fetch(`${API_URL}/api/datasets/${id}`, { cache: "no-store" }),
+    await apiFetch(`${API_URL}/api/datasets/${id}`, { cache: "no-store" }),
   );
+}
+
+export async function getSharedDataset(token: string): Promise<DatasetDetail> {
+  return handle<DatasetDetail>(
+    await apiFetch(`${API_URL}/api/datasets/share/${encodeURIComponent(token)}`),
+  );
+}
+
+export async function copySharedDataset(token: string): Promise<DatasetDetail> {
+  return handle<DatasetDetail>(
+    await apiFetch(
+      `${API_URL}/api/datasets/share/${encodeURIComponent(token)}/copy`,
+      { method: "POST" },
+    ),
+  );
+}
+
+export function shareUrl(token: string): string {
+  if (typeof window === "undefined") return `/calc?share=${encodeURIComponent(token)}`;
+  const url = new URL(window.location.origin + "/calc");
+  url.searchParams.set("share", token);
+  return url.toString();
 }
 
 export async function renameDataset(
@@ -136,7 +189,7 @@ export async function renameDataset(
   name: string,
 ): Promise<DatasetDetail> {
   return handle<DatasetDetail>(
-    await fetch(`${API_URL}/api/datasets/${id}`, {
+    await apiFetch(`${API_URL}/api/datasets/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name }),
@@ -146,7 +199,7 @@ export async function renameDataset(
 
 export async function deleteDataset(id: string): Promise<void> {
   await handle<{ ok: boolean }>(
-    await fetch(`${API_URL}/api/datasets/${id}`, { method: "DELETE" }),
+    await apiFetch(`${API_URL}/api/datasets/${id}`, { method: "DELETE" }),
   );
 }
 
@@ -155,7 +208,7 @@ export async function getRelation(
   relationName: string,
 ): Promise<RelationData> {
   return handle<RelationData>(
-    await fetch(
+    await apiFetch(
       `${API_URL}/api/datasets/${datasetId}/relations/${encodeURIComponent(relationName)}`,
       { cache: "no-store" },
     ),
@@ -168,7 +221,7 @@ export async function renameRelation(
   name: string,
 ): Promise<DatasetDetail> {
   return handle<DatasetDetail>(
-    await fetch(
+    await apiFetch(
       `${API_URL}/api/datasets/${datasetId}/relations/${encodeURIComponent(relationName)}`,
       {
         method: "PATCH",
@@ -184,7 +237,7 @@ export async function deleteRelation(
   relationName: string,
 ): Promise<DatasetDetail> {
   return handle<DatasetDetail>(
-    await fetch(
+    await apiFetch(
       `${API_URL}/api/datasets/${datasetId}/relations/${encodeURIComponent(relationName)}`,
       { method: "DELETE" },
     ),
@@ -200,7 +253,7 @@ export async function addRelation(
   },
 ): Promise<DatasetDetail> {
   return handle<DatasetDetail>(
-    await fetch(`${API_URL}/api/datasets/${datasetId}/relations`, {
+    await apiFetch(`${API_URL}/api/datasets/${datasetId}/relations`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -224,7 +277,7 @@ export async function uploadRelationCsv(
   form.append("skipRows", String(options.skipRows ?? 0));
   form.append("delimiter", options.delimiter ?? ",");
   return handle<DatasetDetail>(
-    await fetch(`${API_URL}/api/datasets/${datasetId}/upload`, {
+    await apiFetch(`${API_URL}/api/datasets/${datasetId}/upload`, {
       method: "POST",
       body: form,
     }),
@@ -256,7 +309,7 @@ export async function updateColumn(
   patch: { name?: string; type?: string },
 ): Promise<DatasetDetail> {
   return handle<DatasetDetail>(
-    await fetch(
+    await apiFetch(
       `${API_URL}/api/datasets/${datasetId}/relations/${encodeURIComponent(relationName)}/columns/${encodeURIComponent(columnName)}`,
       {
         method: "PATCH",
@@ -273,7 +326,7 @@ export async function deleteColumn(
   columnName: string,
 ): Promise<DatasetDetail> {
   return handle<DatasetDetail>(
-    await fetch(
+    await apiFetch(
       `${API_URL}/api/datasets/${datasetId}/relations/${encodeURIComponent(relationName)}/columns/${encodeURIComponent(columnName)}`,
       { method: "DELETE" },
     ),
@@ -286,7 +339,7 @@ export async function addColumn(
   input: { name: string; type?: string; default?: unknown },
 ): Promise<DatasetDetail> {
   return handle<DatasetDetail>(
-    await fetch(
+    await apiFetch(
       `${API_URL}/api/datasets/${datasetId}/relations/${encodeURIComponent(relationName)}/columns`,
       {
         method: "POST",
@@ -307,7 +360,7 @@ export async function addRelationRow(
   values: unknown[],
 ): Promise<DatasetDetail> {
   return handle<DatasetDetail>(
-    await fetch(
+    await apiFetch(
       `${API_URL}/api/datasets/${datasetId}/relations/${encodeURIComponent(relationName)}/rows`,
       {
         method: "POST",
@@ -325,7 +378,7 @@ export async function updateRelationRow(
   values: unknown[],
 ): Promise<DatasetDetail> {
   return handle<DatasetDetail>(
-    await fetch(
+    await apiFetch(
       `${API_URL}/api/datasets/${datasetId}/relations/${encodeURIComponent(relationName)}/rows/${rowIndex}`,
       {
         method: "PUT",
@@ -342,7 +395,7 @@ export async function deleteRelationRow(
   rowIndex: number,
 ): Promise<DatasetDetail> {
   return handle<DatasetDetail>(
-    await fetch(
+    await apiFetch(
       `${API_URL}/api/datasets/${datasetId}/relations/${encodeURIComponent(relationName)}/rows/${rowIndex}`,
       { method: "DELETE" },
     ),
@@ -355,7 +408,7 @@ export async function setRelationRows(
   rows: unknown[][],
 ): Promise<DatasetDetail> {
   return handle<DatasetDetail>(
-    await fetch(
+    await apiFetch(
       `${API_URL}/api/datasets/${datasetId}/relations/${encodeURIComponent(relationName)}/rows`,
       {
         method: "PUT",
@@ -374,7 +427,7 @@ export async function runQuery(input: {
   offset?: number;
 }): Promise<QueryResponse> {
   return handle<QueryResponse>(
-    await fetch(`${API_URL}/api/query`, {
+    await apiFetch(`${API_URL}/api/query`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(input),
@@ -387,7 +440,7 @@ export async function formatQuery(input: {
   query: string;
 }): Promise<string> {
   const data = await handle<{ formatted: string }>(
-    await fetch(`${API_URL}/api/format`, {
+    await apiFetch(`${API_URL}/api/format`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(input),
@@ -407,7 +460,7 @@ export async function uploadDataset(
   form.append("skipRows", String(options.skipRows ?? 0));
   form.append("delimiter", options.delimiter ?? ",");
   return handle<DatasetDetail>(
-    await fetch(`${API_URL}/api/datasets/upload`, {
+    await apiFetch(`${API_URL}/api/datasets/upload`, {
       method: "POST",
       body: form,
     }),
@@ -421,7 +474,7 @@ export async function buildRelation(input: {
   rows: unknown[][];
 }): Promise<DatasetDetail> {
   return handle<DatasetDetail>(
-    await fetch(`${API_URL}/api/datasets/build`, {
+    await apiFetch(`${API_URL}/api/datasets/build`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(input),
@@ -431,7 +484,7 @@ export async function buildRelation(input: {
 
 export async function previewGroupText(text: string): Promise<DatasetDetail[]> {
   const data = await handle<{ groups: DatasetDetail[] }>(
-    await fetch(`${API_URL}/api/datasets/group/preview`, {
+    await apiFetch(`${API_URL}/api/datasets/group/preview`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text }),
@@ -442,7 +495,7 @@ export async function previewGroupText(text: string): Promise<DatasetDetail[]> {
 
 export async function installGroupText(text: string): Promise<DatasetDetail[]> {
   const data = await handle<{ groups: DatasetDetail[] }>(
-    await fetch(`${API_URL}/api/datasets/group/install`, {
+    await apiFetch(`${API_URL}/api/datasets/group/install`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text }),
@@ -455,7 +508,7 @@ export async function exportDatasetText(
   datasetId: string,
 ): Promise<{ text: string; filename: string | null }> {
   return handle<{ text: string; filename: string | null }>(
-    await fetch(`${API_URL}/api/datasets/${datasetId}/export`, {
+    await apiFetch(`${API_URL}/api/datasets/${datasetId}/export`, {
       cache: "no-store",
     }),
   );

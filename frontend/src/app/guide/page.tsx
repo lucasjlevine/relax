@@ -378,8 +378,9 @@ SELECT * FROM Sales`}</Pre>
               </li>
             </ul>
             <p className="text-sm">
-              Edits apply for the current backend process (in-memory). Dataset choice
-              and the editor query are restored after a browser reload.
+              Your uploads and edits are saved on the server for this browser
+              (cookie ownership). Dataset choice and the editor query are restored
+              after a browser reload.
             </p>
           </Section>
 

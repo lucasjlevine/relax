@@ -17,7 +17,7 @@ from app.datasets.user_store import SAFE_NAME, UserDatasetStore
 
 
 class WorkingCatalog:
-    """Mutable catalog over deep-copied built-in groups plus user uploads."""
+    """Mutable catalog: immutable built-ins + disk-backed user datasets."""
 
     def __init__(self, static: DatasetCatalog, users: UserDatasetStore) -> None:
         self.static = static
@@ -32,16 +32,33 @@ class WorkingCatalog:
                 g.id: copy.deepcopy(g) for g in self.static.list_groups()
             }
 
-    def list_groups(self) -> list[GroupDef]:
+    def is_builtin(self, group_id: str) -> bool:
+        with self._lock:
+            return group_id in self._groups
+
+    def list_groups(self, owner_id: str | None = None) -> list[GroupDef]:
         with self._lock:
             built_in = list(self._groups.values())
-        return built_in + self.users.list_groups()
+        if owner_id is None:
+            return built_in + self.users.list_groups()
+        return built_in + self.users.list_for_owner(owner_id)
 
     def get(self, group_id: str) -> GroupDef:
+        """Resolve by id (built-in or any user dataset — unguessable ids)."""
         with self._lock:
             if group_id in self._groups:
                 return self._groups[group_id]
         return self.users.get(group_id)
+
+    def get_for_owner(self, group_id: str, owner_id: str) -> GroupDef:
+        """Get if built-in or owned by owner_id."""
+        with self._lock:
+            if group_id in self._groups:
+                return self._groups[group_id]
+        group = self.users.get(group_id)
+        if group.owner_id != owner_id:
+            raise DatasetError(f"Unknown dataset: {group_id}")
+        return group
 
     def _is_user(self, group_id: str) -> bool:
         try:
@@ -50,38 +67,52 @@ class WorkingCatalog:
         except DatasetError:
             return False
 
-    def _mutate(self, group_id: str) -> GroupDef:
-        """Return a mutable GroupDef; user groups stay in UserDatasetStore."""
+    def _mutate(self, group_id: str, owner_id: str) -> GroupDef:
+        """
+        Return a mutable GroupDef for owner_id.
+
+        Built-ins are forked into a personal copy on first edit.
+        """
         if self._is_user(group_id):
-            return self.users.get(group_id)
+            group = self.users.get(group_id)
+            if group.owner_id != owner_id:
+                raise DatasetError(f"Unknown dataset: {group_id}")
+            return group
+
         with self._lock:
             if group_id not in self._groups:
                 raise DatasetError(f"Unknown dataset: {group_id}")
-            return self._groups[group_id]
+            source = copy.deepcopy(self._groups[group_id])
+        return self.users.fork_from(source, owner_id=owner_id)
 
-    def delete_group(self, group_id: str) -> None:
+    def _after_mutate(self, group: GroupDef) -> GroupDef:
+        if group.owner_id:
+            return self.users.save_group(group)
+        return group
+
+    def delete_group(self, group_id: str, owner_id: str) -> None:
         with self._lock:
             if group_id in self._groups:
+                # Soft-hide built-in for this process only (not persisted)
                 del self._groups[group_id]
                 return
-        if self._is_user(group_id):
-            with self.users._lock:
-                if group_id in self.users._groups:
-                    del self.users._groups[group_id]
-                    return
-        raise DatasetError(f"Unknown dataset: {group_id}")
+        group = self.users.get(group_id)
+        if group.owner_id != owner_id:
+            raise DatasetError(f"Unknown dataset: {group_id}")
+        self.users.delete_group(group_id)
 
-    def rename_group(self, group_id: str, name: str) -> GroupDef:
+    def rename_group(self, group_id: str, name: str, owner_id: str) -> GroupDef:
         name = name.strip()
         if not name:
             raise DatasetError("Dataset name cannot be empty")
-        group = self._mutate(group_id)
+        group = self._mutate(group_id, owner_id)
         group.name = name
-        return group
+        return self._after_mutate(group)
 
     def add_relation(
         self,
         group_id: str,
+        owner_id: str,
         *,
         relation_name: str,
         columns: list[dict[str, str]],
@@ -89,7 +120,7 @@ class WorkingCatalog:
     ) -> GroupDef:
         if not SAFE_NAME.match(relation_name):
             raise DatasetError(f"Invalid relation name: {relation_name}")
-        group = self._mutate(group_id)
+        group = self._mutate(group_id, owner_id)
         if relation_name in group.relations:
             raise DatasetError(f"Relation already exists: {relation_name}")
         col_defs = _column_defs(columns)
@@ -109,21 +140,23 @@ class WorkingCatalog:
         group.relations[relation_name] = RelationDef(
             name=relation_name, columns=col_defs, rows=coerced_rows
         )
-        return group
+        return self._after_mutate(group)
 
-    def attach_relation(self, group_id: str, relation: RelationDef) -> GroupDef:
-        group = self._mutate(group_id)
+    def attach_relation(
+        self, group_id: str, relation: RelationDef, owner_id: str
+    ) -> GroupDef:
+        group = self._mutate(group_id, owner_id)
         if relation.name in group.relations:
             raise DatasetError(f"Relation already exists: {relation.name}")
         group.relations[relation.name] = relation
-        return group
+        return self._after_mutate(group)
 
     def rename_relation(
-        self, group_id: str, relation_name: str, new_name: str
+        self, group_id: str, relation_name: str, new_name: str, owner_id: str
     ) -> GroupDef:
         if not SAFE_NAME.match(new_name):
             raise DatasetError(f"Invalid relation name: {new_name}")
-        group = self._mutate(group_id)
+        group = self._mutate(group_id, owner_id)
         if relation_name not in group.relations:
             raise DatasetError(f"Unknown relation: {relation_name}")
         if new_name in group.relations and new_name != relation_name:
@@ -131,16 +164,18 @@ class WorkingCatalog:
         rel = group.relations.pop(relation_name)
         rel.name = new_name
         group.relations[new_name] = rel
-        return group
+        return self._after_mutate(group)
 
-    def delete_relation(self, group_id: str, relation_name: str) -> GroupDef:
-        group = self._mutate(group_id)
+    def delete_relation(
+        self, group_id: str, relation_name: str, owner_id: str
+    ) -> GroupDef:
+        group = self._mutate(group_id, owner_id)
         if relation_name not in group.relations:
             raise DatasetError(f"Unknown relation: {relation_name}")
         if len(group.relations) <= 1:
             raise DatasetError("Cannot delete the last relation in a dataset")
         del group.relations[relation_name]
-        return group
+        return self._after_mutate(group)
 
     def rename_column(
         self,
@@ -148,10 +183,11 @@ class WorkingCatalog:
         relation_name: str,
         column_name: str,
         new_name: str,
+        owner_id: str,
     ) -> GroupDef:
         if not SAFE_NAME.match(new_name):
             raise DatasetError(f"Invalid column name: {new_name}")
-        group = self._mutate(group_id)
+        group = self._mutate(group_id, owner_id)
         if relation_name not in group.relations:
             raise DatasetError(f"Unknown relation: {relation_name}")
         rel = group.relations[relation_name]
@@ -164,7 +200,7 @@ class WorkingCatalog:
             if col.name == column_name:
                 col.name = new_name
                 break
-        return group
+        return self._after_mutate(group)
 
     def change_column_type(
         self,
@@ -172,9 +208,10 @@ class WorkingCatalog:
         relation_name: str,
         column_name: str,
         new_type: str,
+        owner_id: str,
     ) -> GroupDef:
         new_type = _normalize_type(new_type)
-        group = self._mutate(group_id)
+        group = self._mutate(group_id, owner_id)
         if relation_name not in group.relations:
             raise DatasetError(f"Unknown relation: {relation_name}")
         rel = group.relations[relation_name]
@@ -184,7 +221,6 @@ class WorkingCatalog:
         idx = names.index(column_name)
         if rel.columns[idx].type_name == new_type:
             return group
-        # Best-effort: strip currency/noise; unparseable cells become null.
         coerced_rows: list[list[Any]] = []
         for row in rel.rows:
             new_row = list(row)
@@ -192,12 +228,13 @@ class WorkingCatalog:
             coerced_rows.append(new_row)
         rel.columns[idx].type_name = new_type
         rel.rows = coerced_rows
-        return group
+        return self._after_mutate(group)
 
     def add_column(
         self,
         group_id: str,
         relation_name: str,
+        owner_id: str,
         *,
         name: str,
         type_name: str = "string",
@@ -206,7 +243,7 @@ class WorkingCatalog:
         if not SAFE_NAME.match(name):
             raise DatasetError(f"Invalid column name: {name}")
         type_name = _normalize_type(type_name)
-        group = self._mutate(group_id)
+        group = self._mutate(group_id, owner_id)
         if relation_name not in group.relations:
             raise DatasetError(f"Unknown relation: {relation_name}")
         rel = group.relations[relation_name]
@@ -215,12 +252,12 @@ class WorkingCatalog:
         fill = _coerce_value(default, type_name, strict=False)
         rel.columns.append(ColumnDef(name=name, type_name=type_name))
         rel.rows = [list(row) + [fill] for row in rel.rows]
-        return group
+        return self._after_mutate(group)
 
     def delete_column(
-        self, group_id: str, relation_name: str, column_name: str
+        self, group_id: str, relation_name: str, column_name: str, owner_id: str
     ) -> GroupDef:
-        group = self._mutate(group_id)
+        group = self._mutate(group_id, owner_id)
         if relation_name not in group.relations:
             raise DatasetError(f"Unknown relation: {relation_name}")
         rel = group.relations[relation_name]
@@ -234,12 +271,12 @@ class WorkingCatalog:
         rel.rows = [
             [cell for i, cell in enumerate(row) if i != idx] for row in rel.rows
         ]
-        return group
+        return self._after_mutate(group)
 
     def add_row(
-        self, group_id: str, relation_name: str, values: list[Any]
+        self, group_id: str, relation_name: str, values: list[Any], owner_id: str
     ) -> GroupDef:
-        group = self._mutate(group_id)
+        group = self._mutate(group_id, owner_id)
         if relation_name not in group.relations:
             raise DatasetError(f"Unknown relation: {relation_name}")
         rel = group.relations[relation_name]
@@ -252,7 +289,7 @@ class WorkingCatalog:
             for i in range(len(rel.columns))
         ]
         rel.rows.append(coerced)
-        return group
+        return self._after_mutate(group)
 
     def update_row(
         self,
@@ -260,8 +297,9 @@ class WorkingCatalog:
         relation_name: str,
         row_index: int,
         values: list[Any],
+        owner_id: str,
     ) -> GroupDef:
-        group = self._mutate(group_id)
+        group = self._mutate(group_id, owner_id)
         if relation_name not in group.relations:
             raise DatasetError(f"Unknown relation: {relation_name}")
         rel = group.relations[relation_name]
@@ -276,24 +314,28 @@ class WorkingCatalog:
             for i in range(len(rel.columns))
         ]
         rel.rows[row_index] = coerced
-        return group
+        return self._after_mutate(group)
 
     def delete_row(
-        self, group_id: str, relation_name: str, row_index: int
+        self, group_id: str, relation_name: str, row_index: int, owner_id: str
     ) -> GroupDef:
-        group = self._mutate(group_id)
+        group = self._mutate(group_id, owner_id)
         if relation_name not in group.relations:
             raise DatasetError(f"Unknown relation: {relation_name}")
         rel = group.relations[relation_name]
         if row_index < 0 or row_index >= len(rel.rows):
             raise DatasetError(f"Row index out of range: {row_index}")
         del rel.rows[row_index]
-        return group
+        return self._after_mutate(group)
 
     def set_rows(
-        self, group_id: str, relation_name: str, rows: list[list[Any]]
+        self,
+        group_id: str,
+        relation_name: str,
+        rows: list[list[Any]],
+        owner_id: str,
     ) -> GroupDef:
-        group = self._mutate(group_id)
+        group = self._mutate(group_id, owner_id)
         if relation_name not in group.relations:
             raise DatasetError(f"Unknown relation: {relation_name}")
         rel = group.relations[relation_name]
@@ -310,7 +352,7 @@ class WorkingCatalog:
                 ]
             )
         rel.rows = coerced_rows
-        return group
+        return self._after_mutate(group)
 
 
 def _column_defs(columns: list[dict[str, str]]) -> list[ColumnDef]:

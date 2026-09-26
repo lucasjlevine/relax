@@ -37,9 +37,41 @@ Bracket form `π[a](R)` / `σ[a > 1](R)` is also accepted.
 
 Boolean expressions in `sigma` and theta-join:
 
-- Comparisons: `=`, `!=`, `<>`, `<`, `<=`, `>`, `>=`
+- Comparisons: `=`, `!=`, `<>`, `<`, `<=`, `>`, `>=` (and unicode `≠`, `≤`, `≥`)
+- Null tests: `col = null` / `null = col` → is null; `col != null` / `col ≠ null` → is not null (any type)
 - Logic: `and` / `∧`, `or` / `∨`, `not` / `¬`
 - Column refs: `a` or `R.a`
+
+## Automatic type coercion
+
+If a string column is used as a number (or date), the calculator converts and **persists** the column type on the dataset (built-ins are forked first). Examples:
+
+- Comparisons: `σ_{Movie.year < 1960}(Movie)` → `year` becomes number  
+- Aggregates: `avg` / `sum` / `min` / `max` on a string column → number  
+- Arithmetic / helpers: `a + 1`, `abs(a)`, `round(a)`, …  
+- Date helpers: `date(…)`, `adddate` / `subdate`
+
+## Multiple statements
+
+Separate independent RelAlg queries with **semicolons**. Each statement is executed in order and returns its own result table (and operator tree). A leading `--` comment becomes the result label:
+
+```text
+-- Kate Winslet titles
+π_{Movie.title}(
+  Movie ⋈_{Movie.mov_id = Cast.mov_id} Cast
+  ⋈_{Cast.act_id = Actor.act_id}
+  σ_{Actor.fname = 'Kate' ∧ Actor.lname = 'Winslet'}(Actor)
+);
+
+-- Years before 1960 or after 1990
+π_{Movie.title, Movie.year}(
+  σ_{Movie.year < 1960}(Movie)
+   ∪
+  σ_{Movie.year > 1990}(Movie)
+);
+```
+
+Assignments (`A = …`) within a single statement still share one result (the last assignment / trailing expression). Use `;` only between fully separate queries.
 
 ## Assignments
 

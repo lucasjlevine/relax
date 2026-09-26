@@ -21,5 +21,10 @@ build/
 .idea/
 .vscode/
 
-# Uploads (user-provided datasets at runtime)
+# Uploads (ephemeral SQLite scratch)
 backend/data/uploads/
+
+# Persisted user datasets (cookie-owned JSON)
+backend/data/user_datasets/*.json
+!backend/data/user_datasets/.gitkeep
+

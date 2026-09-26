@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import type { QueryResponse } from "@/lib/api";
-import { ResultTable } from "@/components/calculator/result-table";
+import {
+  ResultTable,
+  useResultExpandedIndex,
+} from "@/components/calculator/result-table";
 import { OperatorTreeView } from "@/components/calculator/operator-tree";
 import { Button } from "@/components/ui/button";
 
@@ -68,7 +71,24 @@ export function ResultsWorkspace({ result }: Props) {
   const [resultsCollapsed, setResultsCollapsed] = useState(false);
   const [treeCollapsed, setTreeCollapsed] = useState(false);
   const [isMd, setIsMd] = useState(false);
+  const [expandedIndex, setExpandedIndex] = useResultExpandedIndex(result);
   const stripRef = useRef<HTMLDivElement>(null);
+
+  const multi =
+    !!result?.results && result.results.length > 1;
+  const resultsTitle = multi
+    ? `Results (${result!.results!.length})`
+    : "Results";
+
+  const activeBlock =
+    expandedIndex !== null
+      ? (result?.results?.find((b) => b.index === expandedIndex) ?? null)
+      : null;
+  const activeTree = activeBlock?.tree ?? result?.tree ?? null;
+  const activeTreeLabel =
+    multi && activeBlock
+      ? activeBlock.label?.trim() || `Statement ${activeBlock.index + 1}`
+      : null;
 
   useEffect(() => {
     const mq = window.matchMedia("(min-width: 768px)");
@@ -174,13 +194,17 @@ export function ResultsWorkspace({ result }: Props) {
           }`}
         >
           <PaneHeader
-            title="Results"
+            title={resultsTitle}
             collapsed={resultsCollapsed}
             onToggle={() => setResultsCollapsed((c) => !c)}
           />
           {!resultsCollapsed ? (
             <div className="min-h-0 flex-1 overflow-hidden">
-              <ResultTable result={result} />
+              <ResultTable
+                result={result}
+                expandedIndex={expandedIndex}
+                onExpandedIndexChange={setExpandedIndex}
+              />
             </div>
           ) : null}
         </section>
@@ -205,13 +229,15 @@ export function ResultsWorkspace({ result }: Props) {
           style={showTreeFixed ? { width: treeWidth } : undefined}
         >
           <PaneHeader
-            title="Operator tree"
+            title={
+              activeTreeLabel ? `Tree · ${activeTreeLabel}` : "Operator tree"
+            }
             collapsed={treeCollapsed}
             onToggle={() => setTreeCollapsed((c) => !c)}
           />
           {!treeCollapsed ? (
-            <div className="min-h-0 flex-1 overflow-hidden">
-              <OperatorTreeView tree={result?.tree ?? null} />
+            <div className="min-h-0 flex-1 overflow-auto p-2">
+              <OperatorTreeView tree={activeTree} />
             </div>
           ) : null}
         </section>

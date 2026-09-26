@@ -25,6 +25,36 @@ def _sql_literal(value: object) -> str:
     raise CompileError(f"Unsupported literal: {value!r}")
 
 
+def _is_null_literal(node: object) -> bool:
+    return isinstance(node, ra.Literal) and node.value is None
+
+
+def _sql_null_comparison(op: str, left: object, right: object) -> str | None:
+    """Rewrite ``expr = null`` / ``expr != null`` to ``IS [NOT] NULL``.
+
+    SQL three-valued logic makes ``col = NULL`` never true; RelAlg (and RelaX)
+    treat equality with the null literal as an is-null test. Works for any
+    column type.
+    """
+    left_null = _is_null_literal(left)
+    right_null = _is_null_literal(right)
+    if not left_null and not right_null:
+        return None
+    if op in ("=", "=="):
+        is_null = True
+    elif op in ("!=", "<>"):
+        is_null = False
+    else:
+        # Other comparisons with null stay as-is (always unknown in SQL).
+        return None
+    if left_null and right_null:
+        # null = null → true; null != null → false
+        return "(TRUE)" if is_null else "(FALSE)"
+    other = right if left_null else left
+    keyword = "IS NULL" if is_null else "IS NOT NULL"
+    return f"({_sql_expr(other)} {keyword})"
+
+
 def _sql_expr(node: object) -> str:
     if isinstance(node, ra.ColumnRef):
         if node.name == "*":
@@ -48,6 +78,9 @@ def _sql_expr(node: object) -> str:
         op = node.op
         if op == "<>":
             op = "!="
+        null_cmp = _sql_null_comparison(op, node.left, node.right)
+        if null_cmp is not None:
+            return null_cmp
         if op == "xor":
             return (
                 f"(({_sql_expr(node.left)}) <> ({_sql_expr(node.right)}))"

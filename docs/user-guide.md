@@ -51,8 +51,14 @@ In the calculator left panel:
 
 **Sidebar tip:** Opening **Manage** or **Group** auto-expands the left panel; drag its right edge to resize. Width is remembered in the browser. Wide tables scroll horizontally.
 
-Edits to built-in datasets apply for the current API process (in-memory). Uploaded/built/group-installed datasets behave the same until the backend restarts.
+### Persistence & sharing
 
+- Uploads, builds, Group installs, and edits to built-ins are saved on the server under `backend/data/user_datasets/` (JSON), keyed by an opaque browser cookie (`relax_owner`). Survives backend restarts.
+- Your dataset list shows built-ins plus **your** datasets only.
+- Editing a built-in (rename, rows, …) creates a **personal copy**; the calculator switches to it.
+- **Manage → Copy share link** produces `/calc?share=…`. Recipients can preview and **Add to my datasets**.
+
+Edits never rewrite the built-in `local_groups` file on disk.
 ## Results
 
 After **Execute**:

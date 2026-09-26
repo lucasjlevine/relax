@@ -62,11 +62,11 @@ def test_format_api_humanizes_parse_errors():
     assert "syntax" in detail["message"].lower() or "early" in detail["message"].lower()
 
 
-def test_csv_upload():
+def test_csv_upload(tmp_path):
     from fastapi.testclient import TestClient
-    from app.main import create_app
+    from tests.test_api import _client
 
-    client = TestClient(create_app())
+    client = _client(tmp_path)
     csv_body = b"id,name\n1,Ada\n2,Bob\n"
     res = client.post(
         "/api/datasets/upload",
@@ -80,7 +80,7 @@ def test_csv_upload():
     )
     assert res.status_code == 200
     body = res.json()
-    assert body["id"].startswith("upload-csv-")
+    assert body["id"].startswith("ds_")
     assert any(r["name"] == "People" for r in body["relations"])
 
     q = client.post(
@@ -95,11 +95,10 @@ def test_csv_upload():
     assert q.json()["rowCount"] == 2
 
 
-def test_csv_upload_skip_and_no_header():
-    from fastapi.testclient import TestClient
-    from app.main import create_app
+def test_csv_upload_skip_and_no_header(tmp_path):
+    from tests.test_api import _client
 
-    client = TestClient(create_app())
+    client = _client(tmp_path)
     csv_body = b"skip me\nx,y\n1,a\n2,b\n"
     res = client.post(
         "/api/datasets/upload",
@@ -117,11 +116,10 @@ def test_csv_upload_skip_and_no_header():
     assert rel["columns"][0]["name"] == "col1"
 
 
-def test_build_relation():
-    from fastapi.testclient import TestClient
-    from app.main import create_app
+def test_build_relation(tmp_path):
+    from tests.test_api import _client
 
-    client = TestClient(create_app())
+    client = _client(tmp_path)
     res = client.post(
         "/api/datasets/build",
         json={
@@ -132,7 +130,7 @@ def test_build_relation():
         },
     )
     assert res.status_code == 200
-    assert res.json()["id"].startswith("custom-")
+    assert res.json()["id"].startswith("ds_")
 
 
 GROUP_TEXT = """
@@ -150,11 +148,10 @@ A = {a:number, b:string
 """
 
 
-def test_group_preview_install_export():
-    from fastapi.testclient import TestClient
-    from app.main import create_app
+def test_group_preview_install_export(tmp_path):
+    from tests.test_api import _client
 
-    client = TestClient(create_app())
+    client = _client(tmp_path)
     preview = client.post("/api/datasets/group/preview", json={"text": GROUP_TEXT})
     assert preview.status_code == 200
     groups = preview.json()["groups"]
@@ -165,7 +162,7 @@ def test_group_preview_install_export():
     installed = client.post("/api/datasets/group/install", json={"text": GROUP_TEXT})
     assert installed.status_code == 200
     gid = installed.json()["groups"][0]["id"]
-    assert gid.startswith("group-")
+    assert gid.startswith("ds_")
 
     exported = client.get(f"/api/datasets/{gid}/export")
     assert exported.status_code == 200

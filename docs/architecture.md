@@ -18,7 +18,7 @@ FastAPI
 
 1. **RelaX-compatible RelAlg syntax** — plaintext keywords (`sigma`, `pi`, `join`) and unicode symbols (`σ`, `π`, `⋈`), including classical subscripts.
 2. **DuckDB as execution engine** — fast columnar queries on educational datasets.
-3. **Educational, not production DB** — queries with row limits; in-memory mutable catalog for teaching edits.
+3. **Educational, not production DB** — queries with row limits; user datasets persist as JSON under cookie ownership (no accounts).
 4. **RelAlg + SQL only** — BagAlg / TRC are out of scope unless explicitly requested. Group Editor is in scope and RelaX format-compatible.
 
 ## Frontend
@@ -32,7 +32,7 @@ FastAPI
 
 | Package | Role |
 |---------|------|
-| `app.datasets` | Built-in `local_groups`, RelaX group parse/serialize, `WorkingCatalog` mutations, user uploads |
+| `app.datasets` | Built-in `local_groups`, disk-backed user datasets (`data/user_datasets`), cookie ownership, fork-on-edit, share tokens |
 | `app.parsers.relalg` | Lark grammar → AST + formatter |
 | `app.parsers.sql` | sqlglot validation |
 | `app.engine` | Compile AST / SQL to DuckDB, build operator tree |

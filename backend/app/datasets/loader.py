@@ -43,6 +43,11 @@ class GroupDef:
     relations: dict[str, RelationDef] = field(default_factory=dict)
     example_relalg: str | None = None
     example_sql: str | None = None
+    # User-dataset metadata (None for built-ins)
+    owner_id: str | None = None
+    share_token: str | None = None
+    forked_from: str | None = None
+    updated_at: str | None = None
 
 
 def _slugify(name: str) -> str:

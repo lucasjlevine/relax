@@ -7,6 +7,8 @@ import { AlignLeft, History, PanelLeft, Play } from "lucide-react";
 import {
   formatQuery,
   getDataset,
+  getSharedDataset,
+  copySharedDataset,
   listDatasets,
   runQuery,
   errorTitle,
@@ -135,6 +137,11 @@ export function CalculatorApp() {
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [functionsOpen, setFunctionsOpen] = useState(false);
+  const [forkNotice, setForkNotice] = useState<string | null>(null);
+  const [sharePrompt, setSharePrompt] = useState<{
+    token: string;
+    detail: DatasetDetail;
+  } | null>(null);
   const functionsBtnRef = useRef<HTMLButtonElement>(null);
   const historyBtnRef = useRef<HTMLButtonElement>(null);
   const booted = useRef(false);
@@ -256,6 +263,28 @@ export function CalculatorApp() {
     };
   }, [refreshDatasets]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const token = new URLSearchParams(window.location.search).get("share");
+    if (!token) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const detail = await getSharedDataset(token);
+        if (cancelled) return;
+        setSharePrompt({ token, detail });
+      } catch (err) {
+        if (!cancelled) {
+          setErrorHeading(errorTitle(err, "Couldn’t open share link"));
+          setError(err instanceof Error ? err.message : "Invalid share link");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const onLanguageChange = (value: string) => {
     const next = value as QueryLanguage;
     setLanguage(next);
@@ -274,9 +303,21 @@ export function CalculatorApp() {
         query,
       });
       setResult(res);
+      if (res.datasetId && res.datasetId !== dataset.id) {
+        const detail = await getDataset(res.datasetId);
+        syncDatasetList(detail, { previousId: dataset.id });
+        if (detail.forkedFrom) {
+          setForkNotice(
+            `Saved as a personal copy of “${detail.forkedFrom}”. Column types were updated for this query.`,
+          );
+        }
+      } else if (res.typeChanges && res.typeChanges.length > 0) {
+        const detail = await getDataset(dataset.id);
+        syncDatasetList(detail);
+      }
       setHistory(
         pushHistory({
-          datasetId: dataset.id,
+          datasetId: res.datasetId ?? dataset.id,
           datasetName: dataset.name,
           language,
           query: query.trim(),
@@ -305,24 +346,39 @@ export function CalculatorApp() {
     }
   };
 
-  const syncDatasetList = (detail: DatasetDetail) => {
+  const syncDatasetList = (detail: DatasetDetail, opts?: { previousId?: string }) => {
+    const previousId = opts?.previousId;
     setDatasets((prev) => {
-      const exists = prev.some((d) => d.id === detail.id);
-      if (!exists) {
-        return [
-          ...prev,
-          { id: detail.id, name: detail.name, description: detail.description },
-        ];
+      let next = prev;
+      if (previousId && previousId !== detail.id) {
+        // Keep built-in in list; add forked copy
+        next = prev.filter((d) => d.id !== detail.id);
       }
-      return prev.map((d) =>
-        d.id === detail.id
-          ? { id: detail.id, name: detail.name, description: detail.description }
-          : d,
-      );
+      const exists = next.some((d) => d.id === detail.id);
+      const summary = {
+        id: detail.id,
+        name: detail.name,
+        description: detail.description,
+        owned: detail.owned,
+        isBuiltin: detail.isBuiltin,
+      };
+      if (!exists) {
+        return [...next, summary];
+      }
+      return next.map((d) => (d.id === detail.id ? summary : d));
     });
     setDataset(detail);
+    if (previousId && previousId !== detail.id && detail.forkedFrom) {
+      setForkNotice(
+        `Saved as a personal copy of “${detail.forkedFrom}”. Further edits stay on this copy.`,
+      );
+    }
   };
 
+  const onDatasetUpdated = (detail: DatasetDetail) => {
+    const previousId = dataset?.id;
+    syncDatasetList(detail, { previousId });
+  };
   const onPanelChange = (tab: SchemaPanelTab) => {
     setPanelTab(tab);
     if (tab === "manage" || tab === "group") {
@@ -444,15 +500,14 @@ export function CalculatorApp() {
                 syncDatasetList(detail);
                 setResult(null);
                 setError(null);
+                setForkNotice(null);
                 const first = detail.relations[0]?.name;
                 if (first) {
                   setLanguage("relalg");
                   setQuery(`π_{*}(${first})`);
                 }
               }}
-              onDatasetUpdated={(detail) => {
-                syncDatasetList(detail);
-              }}
+              onDatasetUpdated={onDatasetUpdated}
               onDatasetDeleted={async (id) => {
                 const remaining = datasets.filter((d) => d.id !== id);
                 setDatasets(remaining);
@@ -474,6 +529,7 @@ export function CalculatorApp() {
                 if (!last) return;
                 setResult(null);
                 setError(null);
+                setForkNotice(null);
                 if (last.exampleRelAlg) {
                   setLanguage("relalg");
                   setQuery(last.exampleRelAlg.trim());
@@ -501,6 +557,76 @@ export function CalculatorApp() {
         </div>
 
         <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          {forkNotice ? (
+            <div className="shrink-0 border-b bg-primary/5 px-4 py-2 text-sm text-foreground">
+              {forkNotice}{" "}
+              <button
+                type="button"
+                className="underline"
+                onClick={() => setForkNotice(null)}
+              >
+                Dismiss
+              </button>
+            </div>
+          ) : null}
+          {sharePrompt ? (
+            <div className="shrink-0 border-b bg-card px-4 py-3 text-sm">
+              <p className="font-medium">
+                Shared dataset: {sharePrompt.detail.name}
+              </p>
+              <p className="mt-1 text-muted-foreground">
+                {sharePrompt.detail.description ||
+                  `${sharePrompt.detail.relations.length} relation(s). Add a copy to your library to query and edit.`}
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={async () => {
+                    try {
+                      const copied = await copySharedDataset(sharePrompt.token);
+                      syncDatasetList(copied);
+                      setSharePrompt(null);
+                      setForkNotice(null);
+                      const url = new URL(window.location.href);
+                      url.searchParams.delete("share");
+                      window.history.replaceState({}, "", url.pathname);
+                      if (copied.exampleRelAlg) {
+                        setLanguage("relalg");
+                        setQuery(copied.exampleRelAlg.trim());
+                      } else {
+                        const first = copied.relations[0]?.name;
+                        if (first) {
+                          setLanguage("relalg");
+                          setQuery(`π_{*}(${first})`);
+                        }
+                      }
+                    } catch (err) {
+                      setErrorHeading(errorTitle(err, "Couldn’t copy dataset"));
+                      setError(
+                        err instanceof Error ? err.message : "Copy failed",
+                      );
+                    }
+                  }}
+                >
+                  Add to my datasets
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setSharePrompt(null);
+                    const url = new URL(window.location.href);
+                    url.searchParams.delete("share");
+                    window.history.replaceState({}, "", url.pathname);
+                  }}
+                >
+                  Dismiss
+                </Button>
+              </div>
+            </div>
+          ) : null}
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto border-b p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <Tabs value={language} onValueChange={onLanguageChange}>

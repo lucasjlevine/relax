@@ -17,6 +17,7 @@ import {
   renameColumn,
   renameDataset,
   renameRelation,
+  shareUrl,
   updateRelationRow,
   uploadDataset,
   uploadRelationCsv,
@@ -362,6 +363,32 @@ function ManagePanel({
           <Trash2 className="h-3.5 w-3.5" />
           Delete dataset
         </Button>
+        {dataset.shareToken && dataset.owned !== false && !dataset.isBuiltin ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="w-full"
+            disabled={busy}
+            onClick={async () => {
+              const url = shareUrl(dataset.shareToken!);
+              try {
+                await navigator.clipboard.writeText(url);
+                setError(null);
+              } catch {
+                window.prompt("Copy share link:", url);
+              }
+            }}
+          >
+            Copy share link
+          </Button>
+        ) : null}
+        {dataset.isBuiltin ? (
+          <p className="text-xs text-muted-foreground">
+            Editing a built-in dataset creates a personal copy saved for this
+            browser.
+          </p>
+        ) : null}
       </div>
 
       <div className="space-y-2">

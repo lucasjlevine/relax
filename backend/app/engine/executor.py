@@ -6,9 +6,15 @@ from typing import Any
 import duckdb
 
 from app.datasets.loader import TYPE_MAP, GroupDef
-from app.models.schemas import ColumnInfo, OperatorTreeNode, QueryResponse
+from app.models.schemas import (
+    ColumnInfo,
+    OperatorTreeNode,
+    QueryResponse,
+    QueryResultBlock,
+)
 from app.parsers.relalg import ast as ra
 from app.parsers.relalg.parser import RelAlgParseError, parse_relalg
+from app.parsers.relalg.statements import split_relalg_statements
 from app.parsers.sql.validator import SqlValidationError, validate_sql
 from app.engine.compiler import CompileError, SqlCompiler, _quote_ident
 from app.engine.tree import build_operator_tree
@@ -161,55 +167,94 @@ def execute_relalg(
     *,
     limit: int,
     offset: int,
+    extra_warnings: list[str] | None = None,
 ) -> QueryResponse:
-    try:
-        ast = parse_relalg(query)
-        tree = build_operator_tree(ast)
-    except RelAlgParseError as exc:
-        raise QueryError(
-            humanize_parse_error(exc.message), code="parse_error"
-        ) from exc
+    statements = split_relalg_statements(query)
+    if not statements:
+        raise QueryError("Query must not be empty", code="validation_error")
+
+    parsed: list[tuple[ra.RANode, str | None]] = []
+    for body, label in statements:
+        try:
+            ast = parse_relalg(body)
+        except RelAlgParseError as exc:
+            prefix = f"{label}: " if label else ""
+            raise QueryError(
+                prefix + humanize_parse_error(exc.message), code="parse_error"
+            ) from exc
+        parsed.append((ast, label))
+
+    blocks: list[QueryResultBlock] = []
+    total_ms = 0.0
+    all_warnings: list[str] = list(extra_warnings or [])
 
     conn = duckdb.connect(database=":memory:")
     try:
         conn.execute("SET enable_external_access=false")
         register_group(conn, group)
-        try:
-            sql = SchemaAwareCompiler(conn).compile(ast)
-        except CompileError as exc:
-            raise QueryError(
-                humanize_query_error(exc.message, language="relalg"),
-                code="compile_error",
-            ) from exc
+        compiler = SchemaAwareCompiler(conn)
 
-        count_sql = f"SELECT COUNT(*) FROM ({sql}) AS _count_sub"
-        start = time.perf_counter()
-        try:
-            total = int(conn.execute(count_sql).fetchone()[0])
-            limited = (
-                f"SELECT * FROM ({sql}) AS _page "
-                f"LIMIT {int(limit)} OFFSET {int(offset)}"
+        for idx, (ast, label) in enumerate(parsed):
+            try:
+                tree = build_operator_tree(ast)
+                sql = compiler.compile(ast)
+            except CompileError as exc:
+                prefix = f"{label}: " if label else ""
+                raise QueryError(
+                    prefix + humanize_query_error(exc.message, language="relalg"),
+                    code="compile_error",
+                ) from exc
+
+            count_sql = f"SELECT COUNT(*) FROM ({sql}) AS _count_sub"
+            start = time.perf_counter()
+            try:
+                total = int(conn.execute(count_sql).fetchone()[0])
+                limited = (
+                    f"SELECT * FROM ({sql}) AS _page "
+                    f"LIMIT {int(limit)} OFFSET {int(offset)}"
+                )
+                relation = conn.execute(limited)
+            except duckdb.Error as exc:
+                prefix = f"{label}: " if label else ""
+                raise QueryError(
+                    prefix + humanize_query_error(str(exc), language="relalg"),
+                    code="execution_error",
+                ) from exc
+            elapsed_ms = (time.perf_counter() - start) * 1000
+            total_ms += elapsed_ms
+            description = relation.description or []
+            columns = [
+                ColumnInfo(name=col[0], type=_map_duck_type(str(col[1])))
+                for col in description
+            ]
+            rows = [
+                [_serialize_cell(v) for v in row] for row in relation.fetchall()
+            ]
+            blocks.append(
+                QueryResultBlock(
+                    index=idx,
+                    label=label or (f"Statement {idx + 1}" if len(parsed) > 1 else None),
+                    columns=columns,
+                    rows=rows,
+                    rowCount=total,
+                    executionMs=round(elapsed_ms, 3),
+                    tree=tree,
+                    warnings=[],
+                )
             )
-            relation = conn.execute(limited)
-        except duckdb.Error as exc:
-            _raise_exec(exc, language="relalg")
-        elapsed_ms = (time.perf_counter() - start) * 1000
-        description = relation.description or []
-        columns = [
-            ColumnInfo(name=col[0], type=_map_duck_type(str(col[1])))
-            for col in description
-        ]
-        rows = [[_serialize_cell(v) for v in row] for row in relation.fetchall()]
-        return QueryResponse(
-            columns=columns,
-            rows=rows,
-            rowCount=total,
-            executionMs=round(elapsed_ms, 3),
-            tree=tree,
-            warnings=[],
-        )
     finally:
         conn.close()
+
+    primary = blocks[-1]
+    return QueryResponse(
+        columns=primary.columns,
+        rows=primary.rows,
+        rowCount=primary.rowCount,
+        executionMs=round(total_ms, 3),
+        tree=primary.tree,
+        warnings=all_warnings,
+        results=blocks,
+    )
 
 
 def execute_sql_query(
@@ -235,4 +280,17 @@ def execute_sql_query(
             OperatorTreeNode(id="2", label="SELECT", operator="select", children=[])
         ],
     )
-    return execute_sql(group, sql, limit=limit, offset=offset, tree=tree)
+    single = execute_sql(group, sql, limit=limit, offset=offset, tree=tree)
+    single.results = [
+        QueryResultBlock(
+            index=0,
+            label=None,
+            columns=single.columns,
+            rows=single.rows,
+            rowCount=single.rowCount,
+            executionMs=single.executionMs,
+            tree=single.tree,
+            warnings=list(single.warnings),
+        )
+    ]
+    return single

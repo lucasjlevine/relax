@@ -8,11 +8,13 @@ class Settings(BaseSettings):
 
     datasets_path: str = "data/local_groups"
     upload_dir: str = "data/uploads"
+    user_datasets_dir: str = "data/user_datasets"
     max_upload_bytes: int = 5 * 1024 * 1024  # 5 MB
     max_rows: int = 1000
     default_limit: int = 100
     query_timeout_ms: int = 5000
     cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
+    owner_cookie_name: str = "relax_owner"
 
 
 @lru_cache

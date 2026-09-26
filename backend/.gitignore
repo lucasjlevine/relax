@@ -7,3 +7,6 @@ __pycache__/
 dist/
 build/
 .env
+data/uploads/
+data/user_datasets/*.json
+!data/user_datasets/.gitkeep

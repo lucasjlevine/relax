@@ -154,5 +154,44 @@ def format_relalg(node: ra.RANode, *, level: int = 0, multiline: bool = True) ->
 
 def format_relalg_query(query: str) -> str:
     from app.parsers.relalg.parser import parse_relalg
+    from app.parsers.relalg.statements import (
+        peel_leading_comments,
+        peel_trailing_comments,
+        split_relalg_raw_parts,
+    )
 
-    return format_relalg(parse_relalg(query))
+    text = query.replace("\r\n", "\n")
+    parts = split_relalg_raw_parts(text)
+    if not parts:
+        return ""
+
+    multi = len(parts) > 1 or ";" in text
+    chunks: list[str] = []
+    for part in parts:
+        if not part.strip():
+            continue
+        leading, rest = peel_leading_comments(part)
+        code, trailing = peel_trailing_comments(rest)
+        if not code.strip():
+            # Comment-only segment (e.g. after a final `;`) — keep as-is.
+            chunks.append(part.strip("\n"))
+            continue
+        formatted = format_relalg(parse_relalg(code))
+        if multi and trailing.strip():
+            # Place `;` after the expression, before trailing comments.
+            lead = ""
+            if leading:
+                lead = leading if leading.endswith("\n") else leading + "\n"
+            piece = f"{lead}{formatted};{trailing}"
+        elif multi:
+            lead = ""
+            if leading:
+                lead = leading if leading.endswith("\n") else leading + "\n"
+            piece = f"{lead}{formatted}{trailing}".rstrip() + ";"
+        else:
+            lead = ""
+            if leading:
+                lead = leading if leading.endswith("\n") else leading + "\n"
+            piece = f"{lead}{formatted}{trailing}"
+        chunks.append(piece)
+    return "\n\n".join(chunks) if multi else chunks[0]

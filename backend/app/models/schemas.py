@@ -20,12 +20,16 @@ class DatasetSummary(BaseModel):
     id: str
     name: str
     description: str
+    owned: bool = False
+    isBuiltin: bool = False
 
 
 class DatasetDetail(DatasetSummary):
     relations: list[RelationInfo]
     exampleRelAlg: str | None = None
     exampleSql: str | None = None
+    shareToken: str | None = None
+    forkedFrom: str | None = None
 
 
 class RelationData(BaseModel):
@@ -86,6 +90,24 @@ class OperatorTreeNode(BaseModel):
     children: list[OperatorTreeNode] = Field(default_factory=list)
 
 
+class QueryResultBlock(BaseModel):
+    index: int
+    label: str | None = None
+    columns: list[ColumnInfo]
+    rows: list[list[Any]]
+    rowCount: int
+    executionMs: float
+    tree: OperatorTreeNode | None = None
+    warnings: list[str] = Field(default_factory=list)
+
+
+class TypeChangeInfo(BaseModel):
+    relation: str
+    column: str
+    fromType: str
+    toType: str
+
+
 class QueryResponse(BaseModel):
     columns: list[ColumnInfo]
     rows: list[list[Any]]
@@ -93,6 +115,9 @@ class QueryResponse(BaseModel):
     executionMs: float
     tree: OperatorTreeNode | None = None
     warnings: list[str] = Field(default_factory=list)
+    results: list[QueryResultBlock] = Field(default_factory=list)
+    datasetId: str | None = None
+    typeChanges: list[TypeChangeInfo] = Field(default_factory=list)
 
 
 class HealthResponse(BaseModel):

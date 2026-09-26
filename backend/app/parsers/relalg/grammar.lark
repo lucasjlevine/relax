@@ -18,6 +18,7 @@ assignment: NAME "=" expr
 ?binary: join_expr
 
 ?join_expr: set_expr
+          | join_expr JOIN_KIND join_on set_expr   -> join_kind_sub
           | join_expr JOIN_KIND set_expr join_on?  -> join_kind
 
 ?join_on: ON condition
