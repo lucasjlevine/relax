@@ -176,43 +176,30 @@ def _sql_func(node: ra.FuncCall) -> str:
     return f"{name.upper()}({rendered_args})"
 
 
-def _rewrite_join_expr(node: object, left_name: str | None, right_name: str | None, la: str, ra_alias: str) -> object:
-    """Rewrite R.col / S.col in join predicates to subquery aliases."""
+def _unqualify_columns(node: object) -> object:
+    """Drop Relation. prefixes — nested subqueries only expose flat column names."""
     if isinstance(node, ra.ColumnRef) and node.relation:
-        if left_name and node.relation == left_name:
-            return ra.ColumnRef(name=node.name, relation=la)
-        if right_name and node.relation == right_name:
-            return ra.ColumnRef(name=node.name, relation=ra_alias)
-        return node
+        return ra.ColumnRef(name=node.name, relation=None)
     if isinstance(node, ra.BinaryExpr):
         return ra.BinaryExpr(
             op=node.op,
-            left=_rewrite_join_expr(node.left, left_name, right_name, la, ra_alias),
-            right=_rewrite_join_expr(node.right, left_name, right_name, la, ra_alias),
+            left=_unqualify_columns(node.left),
+            right=_unqualify_columns(node.right),
         )
     if isinstance(node, ra.UnaryExpr):
-        return ra.UnaryExpr(
-            op=node.op,
-            operand=_rewrite_join_expr(node.operand, left_name, right_name, la, ra_alias),
-        )
+        return ra.UnaryExpr(op=node.op, operand=_unqualify_columns(node.operand))
     if isinstance(node, ra.FuncCall):
         return ra.FuncCall(
             name=node.name,
-            args=[
-                _rewrite_join_expr(a, left_name, right_name, la, ra_alias) for a in node.args
-            ],
+            args=[_unqualify_columns(a) for a in node.args],
         )
     if isinstance(node, ra.CaseExpr):
         return ra.CaseExpr(
             whens=[
-                (
-                    _rewrite_join_expr(c, left_name, right_name, la, ra_alias),
-                    _rewrite_join_expr(r, left_name, right_name, la, ra_alias),
-                )
-                for c, r in node.whens
+                (_unqualify_columns(c), _unqualify_columns(r)) for c, r in node.whens
             ],
             else_result=(
-                _rewrite_join_expr(node.else_result, left_name, right_name, la, ra_alias)
+                _unqualify_columns(node.else_result)
                 if node.else_result is not None
                 else None
             ),
@@ -220,8 +207,80 @@ def _rewrite_join_expr(node: object, left_name: str | None, right_name: str | No
     return node
 
 
-def _base_relation_name(node: ra.RANode) -> str | None:
-    return node.name if isinstance(node, ra.Relation) else None
+def _relation_names_in(node: ra.RANode) -> set[str]:
+    """Base / renamed relation names visible in a RelAlg subtree."""
+    if isinstance(node, ra.Relation):
+        return {node.name}
+    if isinstance(node, ra.RenameRelation):
+        return {node.new_name}
+    if isinstance(node, ra.Statement):
+        return _relation_names_in(node.result)
+    names: set[str] = set()
+    for attr in ("child", "left", "right"):
+        child = getattr(node, attr, None)
+        if isinstance(child, ra.RANode):
+            names |= _relation_names_in(child)
+    return names
+
+
+def _rewrite_join_expr(
+    node: object,
+    left_names: set[str],
+    right_names: set[str],
+    la: str,
+    ra_alias: str,
+) -> object:
+    """Rewrite R.col / S.col in join predicates to subquery aliases."""
+    if isinstance(node, ra.ColumnRef) and node.relation:
+        if node.relation in left_names and node.relation not in right_names:
+            return ra.ColumnRef(name=node.name, relation=la)
+        if node.relation in right_names and node.relation not in left_names:
+            return ra.ColumnRef(name=node.name, relation=ra_alias)
+        if node.relation in left_names:
+            return ra.ColumnRef(name=node.name, relation=la)
+        if node.relation in right_names:
+            return ra.ColumnRef(name=node.name, relation=ra_alias)
+        # Unknown qualifier — leave bare so DuckDB can resolve by column name
+        return ra.ColumnRef(name=node.name, relation=None)
+    if isinstance(node, ra.BinaryExpr):
+        return ra.BinaryExpr(
+            op=node.op,
+            left=_rewrite_join_expr(node.left, left_names, right_names, la, ra_alias),
+            right=_rewrite_join_expr(node.right, left_names, right_names, la, ra_alias),
+        )
+    if isinstance(node, ra.UnaryExpr):
+        return ra.UnaryExpr(
+            op=node.op,
+            operand=_rewrite_join_expr(
+                node.operand, left_names, right_names, la, ra_alias
+            ),
+        )
+    if isinstance(node, ra.FuncCall):
+        return ra.FuncCall(
+            name=node.name,
+            args=[
+                _rewrite_join_expr(a, left_names, right_names, la, ra_alias)
+                for a in node.args
+            ],
+        )
+    if isinstance(node, ra.CaseExpr):
+        return ra.CaseExpr(
+            whens=[
+                (
+                    _rewrite_join_expr(c, left_names, right_names, la, ra_alias),
+                    _rewrite_join_expr(r, left_names, right_names, la, ra_alias),
+                )
+                for c, r in node.whens
+            ],
+            else_result=(
+                _rewrite_join_expr(
+                    node.else_result, left_names, right_names, la, ra_alias
+                )
+                if node.else_result is not None
+                else None
+            ),
+        )
+    return node
 
 
 def _join_sql(
@@ -232,8 +291,8 @@ def _join_sql(
     join_type: str,
     condition: object | None,
     *,
-    left_rel: str | None = None,
-    right_rel: str | None = None,
+    left_node: ra.RANode | None = None,
+    right_node: ra.RANode | None = None,
 ) -> str:
     left = f"({left_sql}) AS {_quote_ident(la)}"
     right = f"({right_sql}) AS {_quote_ident(ra_alias)}"
@@ -241,7 +300,9 @@ def _join_sql(
         if join_type == "INNER":
             return f"SELECT * FROM {left} NATURAL JOIN {right}"
         return f"SELECT * FROM {left} NATURAL {join_type} JOIN {right}"
-    rewritten = _rewrite_join_expr(condition, left_rel, right_rel, la, ra_alias)
+    left_names = _relation_names_in(left_node) if left_node is not None else set()
+    right_names = _relation_names_in(right_node) if right_node is not None else set()
+    rewritten = _rewrite_join_expr(condition, left_names, right_names, la, ra_alias)
     # Unqualified same-name equality: a = a → USING(a)
     if (
         isinstance(rewritten, ra.BinaryExpr)
@@ -297,7 +358,7 @@ class SqlCompiler:
                 return f"SELECT DISTINCT * FROM ({child_sql}) AS {_quote_ident(alias)}"
             parts: list[str] = []
             for expr, col_alias in node.items:
-                rendered = _sql_expr(expr)
+                rendered = _sql_expr(_unqualify_columns(expr))
                 if col_alias:
                     parts.append(f"{rendered} AS {_quote_ident(col_alias)}")
                 else:
@@ -310,7 +371,8 @@ class SqlCompiler:
         if isinstance(node, ra.Selection):
             child_sql = self._compile(node.child)
             alias = self._next_alias()
-            cond = _sql_expr(node.condition)
+            cond_node = _unqualify_columns(node.condition)
+            cond = _sql_expr(cond_node)
             if _expr_contains_rownum(node.condition):
                 # DuckDB QUALIFY allows window functions in filters.
                 return (
@@ -342,7 +404,8 @@ class SqlCompiler:
             child_sql = self._compile(node.child)
             alias = self._next_alias()
             keys = ", ".join(
-                f"{_sql_expr(expr)} {direction.upper()}" for expr, direction in node.keys
+                f"{_sql_expr(_unqualify_columns(expr))} {direction.upper()}"
+                for expr, direction in node.keys
             )
             return (
                 f"SELECT * FROM ({child_sql}) AS {_quote_ident(alias)} ORDER BY {keys}"
@@ -351,10 +414,10 @@ class SqlCompiler:
         if isinstance(node, ra.GroupBy):
             child_sql = self._compile(node.child)
             alias = self._next_alias()
-            group_cols = [_sql_expr(c) for c in node.group_cols]
+            group_cols = [_sql_expr(_unqualify_columns(c)) for c in node.group_cols]
             select_parts = list(group_cols)
             for fn, arg, agg_alias in node.aggregates:
-                rendered = f"{fn.upper()}({_sql_expr(arg)})"
+                rendered = f"{fn.upper()}({_sql_expr(_unqualify_columns(arg))})"
                 if agg_alias:
                     rendered = f"{rendered} AS {_quote_ident(agg_alias)}"
                 select_parts.append(rendered)
@@ -410,8 +473,8 @@ class SqlCompiler:
                 ra_alias,
                 "INNER",
                 node.condition,
-                left_rel=_base_relation_name(node.left),
-                right_rel=_base_relation_name(node.right),
+                left_node=node.left,
+                right_node=node.right,
             )
 
         if isinstance(node, ra.LeftOuterJoin):
@@ -423,8 +486,8 @@ class SqlCompiler:
                 ra_alias,
                 "LEFT",
                 node.condition,
-                left_rel=_base_relation_name(node.left),
-                right_rel=_base_relation_name(node.right),
+                left_node=node.left,
+                right_node=node.right,
             )
 
         if isinstance(node, ra.RightOuterJoin):
@@ -436,8 +499,8 @@ class SqlCompiler:
                 ra_alias,
                 "RIGHT",
                 node.condition,
-                left_rel=_base_relation_name(node.left),
-                right_rel=_base_relation_name(node.right),
+                left_node=node.left,
+                right_node=node.right,
             )
 
         if isinstance(node, ra.FullOuterJoin):
@@ -449,8 +512,8 @@ class SqlCompiler:
                 ra_alias,
                 "FULL",
                 node.condition,
-                left_rel=_base_relation_name(node.left),
-                right_rel=_base_relation_name(node.right),
+                left_node=node.left,
+                right_node=node.right,
             )
 
         if isinstance(node, ra.LeftSemiJoin):
@@ -462,7 +525,14 @@ class SqlCompiler:
                     f"SELECT DISTINCT {_quote_ident(la)}.* FROM ({left}) AS {_quote_ident(la)} "
                     f"SEMI JOIN ({right}) AS {_quote_ident(ra_alias)}"
                 )
-            cond = _sql_expr(node.condition)
+            rewritten = _rewrite_join_expr(
+                node.condition,
+                _relation_names_in(node.left),
+                _relation_names_in(node.right),
+                la,
+                ra_alias,
+            )
+            cond = _sql_expr(rewritten)
             return (
                 f"SELECT DISTINCT {_quote_ident(la)}.* FROM ({left}) AS {_quote_ident(la)} "
                 f"SEMI JOIN ({right}) AS {_quote_ident(ra_alias)} ON {cond}"
@@ -478,7 +548,14 @@ class SqlCompiler:
                     f"SELECT DISTINCT {_quote_ident(la)}.* FROM ({left}) AS {_quote_ident(la)} "
                     f"SEMI JOIN ({right}) AS {_quote_ident(ra_alias)}"
                 )
-            cond = _sql_expr(node.condition)
+            rewritten = _rewrite_join_expr(
+                node.condition,
+                _relation_names_in(node.right),
+                _relation_names_in(node.left),
+                la,
+                ra_alias,
+            )
+            cond = _sql_expr(rewritten)
             return (
                 f"SELECT DISTINCT {_quote_ident(la)}.* FROM ({left}) AS {_quote_ident(la)} "
                 f"SEMI JOIN ({right}) AS {_quote_ident(ra_alias)} ON {cond}"
@@ -493,7 +570,14 @@ class SqlCompiler:
                     f"SELECT {_quote_ident(la)}.* FROM ({left}) AS {_quote_ident(la)} "
                     f"ANTI JOIN ({right}) AS {_quote_ident(ra_alias)}"
                 )
-            cond = _sql_expr(node.condition)
+            rewritten = _rewrite_join_expr(
+                node.condition,
+                _relation_names_in(node.left),
+                _relation_names_in(node.right),
+                la,
+                ra_alias,
+            )
+            cond = _sql_expr(rewritten)
             return (
                 f"SELECT {_quote_ident(la)}.* FROM ({left}) AS {_quote_ident(la)} "
                 f"ANTI JOIN ({right}) AS {_quote_ident(ra_alias)} ON {cond}"

@@ -46,6 +46,49 @@ def test_execute_relalg_join(joins):
     assert result.tree is not None
 
 
+def test_qualified_attribute_on_base_relation(group):
+    result = execute_relalg(
+        group,
+        "π_{Employee.name}(σ_{Employee.dept = 'Engineering'}(Employee))",
+        limit=100,
+        offset=0,
+    )
+    assert result.rowCount == 2
+    assert {row[0] for row in result.rows} == {"Ana", "Cara"}
+
+
+def test_qualified_attributes_in_selection(joins):
+    # Relation.attr in σ over a base relation (user's Director.fname pattern).
+    q = (
+        "π_{title}("
+        "  Project ⋈ "
+        "  σ_{Assign.name = 'Ana' ∧ Assign.role = 'Lead'}(Assign)"
+        ")"
+    )
+    result = execute_relalg(joins, q, limit=100, offset=0)
+    assert result.rowCount >= 1
+    assert result.columns[0].name == "title"
+    assert "Website" in {row[0] for row in result.rows}
+
+
+def test_qualified_theta_join(joins):
+    result = execute_relalg(
+        joins,
+        "π_{title, name}(Project ⋈ Assign on Project.pid = Assign.pid)",
+        limit=100,
+        offset=0,
+    )
+    assert result.rowCount > 0
+    # Subscript-after-right form also used by the grammar
+    result2 = execute_relalg(
+        joins,
+        "π_{title}(Project ⋈ Assign _{Project.pid = Assign.pid})",
+        limit=100,
+        offset=0,
+    )
+    assert result2.rowCount > 0
+
+
 def test_execute_sql(group):
     result = execute_sql_query(
         group,

@@ -50,3 +50,10 @@ def test_compile_contains_select():
     sql = compile_relalg(parse_relalg("pi a (R)"))
     assert "SELECT" in sql.upper()
     assert "a" in sql
+
+
+def test_compile_unqualifies_relation_dot_attr():
+    sql = compile_relalg(parse_relalg("π_{R.a}(σ_{R.a > 1}(R))"))
+    # Nested subquery aliases are synthetic; Relation.attr must become bare columns.
+    assert '"R"."a"' not in sql
+    assert '"a"' in sql
