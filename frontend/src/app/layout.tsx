@@ -17,7 +17,7 @@ const display = Fraunces({
 export const metadata: Metadata = {
   title: "relax — RelAlg & SQL learning calculator",
   description:
-    "Learn relational algebra and SQL by writing queries against example datasets.",
+    "Write relational algebra or SQL against teaching datasets. Classical subscripts, operator tree, CSV export, and editable data.",
 };
 
 export default function RootLayout({

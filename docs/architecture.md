@@ -16,26 +16,26 @@ FastAPI
 
 ## Design principles
 
-1. **RelaX-compatible RelAlg syntax** — plaintext keywords (`sigma`, `pi`, `join`) and unicode symbols (`σ`, `π`, `⋈`).
+1. **RelaX-compatible RelAlg syntax** — plaintext keywords (`sigma`, `pi`, `join`) and unicode symbols (`σ`, `π`, `⋈`), including classical subscripts.
 2. **DuckDB as execution engine** — fast columnar queries on educational datasets.
-3. **Educational, not production DB** — read-only queries, row limits, timeouts.
-4. **Incremental features** — core ops first; outer joins / γ / τ / gist later.
+3. **Educational, not production DB** — queries with row limits; in-memory mutable catalog for teaching edits.
+4. **RelAlg + SQL only** — BagAlg / TRC / GE are out of scope unless explicitly requested.
 
 ## Frontend
 
-- App Router pages: `/` (landing), `/calc` (calculator)
-- Shadcn for accessible primitives
-- CodeMirror for RelAlg/SQL editing
-- Calls `NEXT_PUBLIC_API_URL` for datasets and query execution
+- App Router pages: `/` (landing + guide), `/calc` (calculator)
+- Resizable dataset sidebar (Manage auto-expands)
+- Shadcn primitives + CodeMirror editor
+- Calls `NEXT_PUBLIC_API_URL` for datasets, mutations, and query execution
 
 ## Backend
 
 | Package | Role |
 |---------|------|
-| `app.datasets` | Parse RelaX `group:` files, register tables |
-| `app.parsers.relalg` | Lark grammar → AST |
+| `app.datasets` | Built-in `local_groups`, `WorkingCatalog` mutations, user uploads |
+| `app.parsers.relalg` | Lark grammar → AST + formatter |
 | `app.parsers.sql` | sqlglot validation |
-| `app.engine` | Compile AST / SQL to DuckDB, build tree |
+| `app.engine` | Compile AST / SQL to DuckDB, build operator tree |
 
 ## Data flow (query)
 

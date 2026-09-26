@@ -10,15 +10,17 @@ Base URL: `http://localhost:8000`
 
 ## `GET /api/datasets`
 
-List available dataset groups.
+List available dataset groups (built-in + uploaded/built).
+
+Built-in groups: `basics`, `joins`, `setops`, `aggregates`, `library`.
 
 ```json
 {
   "datasets": [
     {
-      "id": "misc-rst",
-      "name": "R, S, T",
-      "description": "Small relations for join practice"
+      "id": "basics",
+      "name": "Basics",
+      "description": "Single-table practice for selection, projection, and renaming."
     }
   ]
 }
@@ -30,22 +32,50 @@ Schema and relation metadata for one group.
 
 ```json
 {
-  "id": "misc-rst",
-  "name": "R, S, T",
+  "id": "basics",
+  "name": "Basics",
   "description": "...",
   "relations": [
     {
-      "name": "R",
+      "name": "Employee",
       "columns": [
-        { "name": "a", "type": "number" },
-        { "name": "b", "type": "string" },
-        { "name": "c", "type": "string" }
+        { "name": "eid", "type": "number" },
+        { "name": "name", "type": "string" }
       ],
       "rowCount": 5
     }
-  ]
+  ],
+  "exampleRelAlg": "π_{name}(\\n  σ_{dept = 'Engineering'}(Employee)\\n)",
+  "exampleSql": "SELECT name\\nFROM Employee\\nWHERE dept = 'Engineering'"
 }
 ```
+
+## Dataset management
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `PATCH` | `/api/datasets/{id}` | Rename dataset (`{ "name": "..." }`) |
+| `DELETE` | `/api/datasets/{id}` | Delete dataset |
+| `POST` | `/api/datasets/{id}/upload` | Add CSV as a new relation in this dataset |
+| `POST` | `/api/datasets/{id}/relations` | Add relation (`relationName`, `columns`, `rows`) |
+| `GET` | `/api/datasets/{id}/relations/{name}` | Relation columns + rows |
+| `PATCH` | `/api/datasets/{id}/relations/{name}` | Rename relation (`{ "name": "..." }`) |
+| `DELETE` | `/api/datasets/{id}/relations/{name}` | Delete relation |
+| `PATCH` | `/api/datasets/{id}/relations/{name}/columns/{col}` | Rename and/or change type (`{ "name"?, "type"? }`). Number conversion strips `$` / commas; bad cells become null. |
+| `POST` | `/api/datasets/{id}/relations/{name}/columns` | Add column (`{ "name", "type"?, "default"? }`) |
+| `DELETE` | `/api/datasets/{id}/relations/{name}/columns/{col}` | Delete column |
+| `POST` | `/api/datasets/{id}/relations/{name}/rows` | Add row (`{ "values": [...] }`) |
+| `PUT` | `/api/datasets/{id}/relations/{name}/rows` | Replace all rows |
+| `PUT` | `/api/datasets/{id}/relations/{name}/rows/{i}` | Update row |
+| `DELETE` | `/api/datasets/{id}/relations/{name}/rows/{i}` | Delete row |
+
+## `POST /api/datasets/upload`
+
+Upload `.csv` / `.db` / `.sqlite` (multipart form).
+
+## `POST /api/datasets/build`
+
+Create a dataset from column/row JSON.
 
 ## `POST /api/query`
 
@@ -55,9 +85,9 @@ Execute RelAlg or SQL against a dataset.
 
 ```json
 {
-  "datasetId": "misc-rst",
+  "datasetId": "basics",
   "language": "relalg",
-  "query": "pi a (sigma a > 1 (R))",
+  "query": "π_{name}(σ_{salary > 80000}(Employee))",
   "limit": 100,
   "offset": 0
 }
@@ -69,26 +99,15 @@ Execute RelAlg or SQL against a dataset.
 
 ```json
 {
-  "columns": [
-    { "name": "a", "type": "number" }
-  ],
-  "rows": [[2], [4]],
+  "columns": [{ "name": "name", "type": "VARCHAR" }],
+  "rows": [["Ana"], ["Cara"]],
   "rowCount": 2,
   "executionMs": 1.2,
   "tree": {
     "id": "1",
-    "label": "π a",
+    "label": "π name",
     "operator": "projection",
-    "children": [
-      {
-        "id": "2",
-        "label": "σ a > 1",
-        "operator": "selection",
-        "children": [
-          { "id": "3", "label": "R", "operator": "relation", "children": [] }
-        ]
-      }
-    ]
+    "children": []
   },
   "warnings": []
 }
@@ -96,41 +115,4 @@ Execute RelAlg or SQL against a dataset.
 
 ## `POST /api/format`
 
-Pretty-print a query. RelAlg is rewritten to classical subscript notation.
-
-### Request
-
-```json
-{ "language": "relalg", "query": "pi a (sigma a > 1 (R))" }
-```
-
-### Response
-
-```json
-{ "formatted": "π_{a}(σ_{a > 1}(R))" }
-```
-
-## `POST /api/datasets/upload`
-
-Multipart form fields:
-
-| Field | Description |
-|-------|-------------|
-| `file` | `.csv`, `.db`, `.sqlite`, or `.sqlite3` (max 5 MB) |
-| `relationName` | Optional table name for CSV |
-| `hasHeader` | `true`/`false` — treat first data row as header (default true) |
-| `skipRows` | Integer rows to skip from the top (default 0) |
-| `delimiter` | CSV delimiter: `,`, `;`, tab, or `\|` (default `,`) |
-
-## `POST /api/datasets/build`
-
-Build a relation from JSON:
-
-```json
-{
-  "name": "Custom",
-  "relationName": "R",
-  "columns": [{ "name": "a", "type": "number" }],
-  "rows": [[1], [2]]
-}
-```
+Pretty-print RelAlg (subscript notation) or SQL.

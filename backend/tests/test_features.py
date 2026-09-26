@@ -18,9 +18,12 @@ def test_subscript_parse_and_format():
 
 
 def test_left_join_and_order():
-    group = DatasetCatalog(DATA_PATH).get("r-s-t")
+    group = DatasetCatalog(DATA_PATH).get("joins")
     result = execute_relalg(
-        group, "tau a asc (R left join S on R.b = S.b)", limit=50, offset=0
+        group,
+        "tau title asc (Project left join Assign on Project.pid = Assign.pid)",
+        limit=50,
+        offset=0,
     )
     assert result.rowCount >= 1
     assert result.tree is not None
@@ -33,7 +36,10 @@ def test_format_api_endpoint():
     client = TestClient(create_app())
     res = client.post(
         "/api/format",
-        json={"language": "relalg", "query": "pi a (sigma a > 1 (R))"},
+        json={
+            "language": "relalg",
+            "query": "pi name (sigma salary > 80000 (Employee))",
+        },
     )
     assert res.status_code == 200
     assert "π_{" in res.json()["formatted"]

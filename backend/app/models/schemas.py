@@ -28,8 +28,47 @@ class DatasetDetail(DatasetSummary):
     exampleSql: str | None = None
 
 
+class RelationData(BaseModel):
+    name: str
+    columns: list[ColumnInfo]
+    rows: list[list[Any]]
+
+
 class DatasetListResponse(BaseModel):
     datasets: list[DatasetSummary]
+
+
+class RenameDatasetRequest(BaseModel):
+    name: str
+
+
+class RenameRelationRequest(BaseModel):
+    name: str
+
+
+class RenameColumnRequest(BaseModel):
+    name: str | None = None
+    type: str | None = None
+
+
+class AddColumnRequest(BaseModel):
+    name: str
+    type: str = "string"
+    default: Any = None
+
+
+class AddRelationRequest(BaseModel):
+    relationName: str
+    columns: list[ColumnInfo]
+    rows: list[list[Any]] = Field(default_factory=list)
+
+
+class RowValuesRequest(BaseModel):
+    values: list[Any]
+
+
+class SetRowsRequest(BaseModel):
+    rows: list[list[Any]]
 
 
 class QueryRequest(BaseModel):

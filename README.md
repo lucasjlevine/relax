@@ -1,15 +1,8 @@
 # relax
 
-A web-based Relational Algebra and SQL learning calculator inspired by [RelaX](https://dbis-uibk.github.io/relax/landing).
+A web-based **Relational Algebra** and **SQL** learning calculator inspired by [RelaX](https://dbis-uibk.github.io/relax/landing).
 
-Write RelAlg or SQL against example datasets, execute queries, and inspect results plus an operator tree.
-
-## Stack
-
-| Layer | Technology |
-|-------|------------|
-| Frontend | Next.js (App Router), TypeScript, Shadcn UI, CodeMirror 6 |
-| Backend | Python 3.12, FastAPI, DuckDB, Lark, sqlglot |
+Write RelAlg or SQL against teaching datasets, execute instantly, inspect a result table and operator tree, manage or upload data, and export CSV.
 
 ## Quickstart
 
@@ -39,7 +32,7 @@ npm install
 npm run dev
 ```
 
-App: http://localhost:3000
+App: http://localhost:3000 · Calculator: http://localhost:3000/calc
 
 ### Docker Compose
 
@@ -47,43 +40,64 @@ App: http://localhost:3000
 docker compose up --build
 ```
 
-- Frontend: http://localhost:3000
-- Backend: http://localhost:8000
+## What matters most
 
-## Project layout
+| Topic | Short version |
+|-------|----------------|
+| **Modes** | RelAlg and SQL share one execute → results → tree flow |
+| **Notation** | Unicode subscripts (`π_{…}`) *and* plaintext (`pi …`); **Format** rewrites to classical style |
+| **Datasets** | Five built-ins: Basics, Joins, SetOps, Aggregates, Library — plus CSV/SQLite upload and in-app builder |
+| **Manage** | Rename/delete datasets, relations, and columns; edit rows; add another relation (or CSV) into the same dataset; drag the left panel wider |
+| **Export** | Download the current result as CSV |
+| **Scope** | RelAlg + SQL only — not BagAlg / TRC / GE |
 
-```
-relax/
-├── frontend/     # Next.js calculator UI
-├── backend/      # FastAPI + DuckDB engine
-├── docs/         # Architecture, syntax, API
-└── .cursor/rules/
-```
-
-## Documentation
-
-- [Architecture](docs/architecture.md)
-- [RelAlg syntax](docs/relalg-syntax.md)
-- [API reference](docs/api.md)
-- [Development](docs/development.md)
-
-## Scope
-
-**Supported:** RelAlg core + extended operators (outer/semi/anti joins, γ, τ, δ, ÷), SQL SELECT subset, classical subscript notation + autoformat, CSV/SQLite upload and in-app relation builder.  
-**Not in scope yet:** BagAlg, TRC, gist datasets, intermediate-node result drill-down.
+Full walkthrough: **[docs/user-guide.md](docs/user-guide.md)**
 
 ## Example queries
 
-RelAlg:
+RelAlg (classical subscript):
 
 ```text
-pi a (sigma a > 1 (R))
-R join S
+π_{name}(
+  σ_{dept = 'Engineering'}(Employee)
+)
+```
+
+RelAlg (prefix):
+
+```text
+pi name (sigma dept = 'Engineering' (Employee))
 ```
 
 SQL:
 
 ```sql
-SELECT a FROM R WHERE a > 1
-SELECT * FROM R NATURAL JOIN S
+SELECT name
+FROM Employee
+WHERE dept = 'Engineering'
 ```
+
+## Stack
+
+| Layer | Technology |
+|-------|------------|
+| Frontend | Next.js (App Router), TypeScript, Shadcn UI, CodeMirror 6 |
+| Backend | Python 3.12, FastAPI, DuckDB, Lark, sqlglot |
+
+## Project layout
+
+```
+relax/
+├── frontend/     # Next.js UI (landing + /calc)
+├── backend/      # FastAPI + DuckDB engine
+├── docs/         # User guide, syntax, API, architecture
+└── .cursor/rules/
+```
+
+## Documentation
+
+- [User guide](docs/user-guide.md) — features & UX tips
+- [RelAlg syntax](docs/relalg-syntax.md)
+- [API reference](docs/api.md)
+- [Architecture](docs/architecture.md)
+- [Development](docs/development.md)

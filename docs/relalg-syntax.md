@@ -6,12 +6,12 @@ Both **unicode symbols** and **plaintext** keywords are accepted. Keywords are c
 
 | Symbol | Plaintext | Subscript form | Example |
 |--------|-----------|----------------|---------|
-| σ | `sigma` | `σ_{cond}(R)` | `σ_{a > 1}(R)` or `sigma a > 1 (R)` |
-| π | `pi` | `π_{cols}(R)` | `π_{a, b}(R)` |
-| ρ | `rho` | `ρ_{renames}(R)` | `ρ_{a→x}(R)` |
-| τ | `tau` / `order by` | `τ_{keys}(R)` | `τ_{a asc}(R)` |
-| γ | `gamma` / `group by` | `γ_{cols; aggs}(R)` | `γ_{a; count(*)→n}(R)` |
-| δ | `delta` / `distinct` | `δ(R)` | `delta (R)` |
+| σ | `sigma` | `σ_{cond}(R)` | `σ_{dept = 'Engineering'}(Employee)` or `sigma dept = 'Engineering' (Employee)` |
+| π | `pi` | `π_{cols}(R)` | `π_{name}(Employee)` |
+| ρ | `rho` | `ρ_{renames}(R)` | `ρ_{name→n}(Employee)` |
+| τ | `tau` / `order by` | `τ_{keys}(R)` | `τ_{salary desc}(Employee)` |
+| γ | `gamma` / `group by` | `γ_{cols; aggs}(R)` | `γ_{region; sum(amount)→total}(Sale)` |
+| δ | `delta` / `distinct` | `δ(R)` | `delta (Employee)` |
 
 Use **Format** in the calculator to rewrite prefix-style queries into classical subscript notation with indentation for nested expressions.
 

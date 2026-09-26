@@ -5,9 +5,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import datasets, query
 from app.config import get_settings
-from app.datasets.catalog import CombinedCatalog
 from app.datasets.loader import DatasetCatalog
 from app.datasets.user_store import UserDatasetStore
+from app.datasets.working_catalog import WorkingCatalog
 from app.models.schemas import HealthResponse
 
 
@@ -34,7 +34,7 @@ def create_app() -> FastAPI:
     static = DatasetCatalog(datasets_path)
     user_store = UserDatasetStore(upload_dir, settings.max_upload_bytes)
     app.state.user_store = user_store
-    app.state.catalog = CombinedCatalog(static, user_store)
+    app.state.catalog = WorkingCatalog(static, user_store)
     app.include_router(datasets.router)
     app.include_router(query.router)
 

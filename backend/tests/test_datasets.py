@@ -11,18 +11,18 @@ DATA_PATH = Path(__file__).resolve().parent.parent / "data" / "local_groups"
 def test_parse_local_groups_file():
     text = DATA_PATH.read_text(encoding="utf-8")
     groups = parse_local_groups(text)
-    assert len(groups) >= 3
+    assert len(groups) == 5
     names = {g.name for g in groups}
-    assert "R, S, T" in names
-    assert "University" in names
+    assert names == {"Basics", "Joins", "SetOps", "Aggregates", "Library"}
 
 
-def test_catalog_get_misc():
+def test_catalog_get_basics():
     catalog = DatasetCatalog(DATA_PATH)
-    group = catalog.get("r-s-t")
-    assert "R" in group.relations
-    assert group.relations["R"].columns[0].name == "a"
-    assert len(group.relations["R"].rows) == 5
+    group = catalog.get("basics")
+    assert "Employee" in group.relations
+    assert group.relations["Employee"].columns[0].name == "eid"
+    assert len(group.relations["Employee"].rows) == 5
+    assert "π_{name}" in (group.example_relalg or "")
 
 
 def test_catalog_unknown():

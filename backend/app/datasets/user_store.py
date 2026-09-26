@@ -76,6 +76,33 @@ class UserDatasetStore:
         skip_rows: int = 0,
         delimiter: str = ",",
     ) -> GroupDef:
+        rel = self.parse_csv_relation(
+            filename=filename,
+            content=content,
+            relation_name=relation_name,
+            has_header=has_header,
+            skip_rows=skip_rows,
+            delimiter=delimiter,
+        )
+        uid = str(uuid.uuid4())[:8]
+        group = GroupDef(
+            id=f"upload-csv-{uid}",
+            name=dataset_name or f"CSV: {filename}",
+            description=f"Uploaded CSV ({filename})",
+            relations={rel.name: rel},
+        )
+        return self.add_group(group)
+
+    def parse_csv_relation(
+        self,
+        *,
+        filename: str,
+        content: bytes,
+        relation_name: str | None = None,
+        has_header: bool = True,
+        skip_rows: int = 0,
+        delimiter: str = ",",
+    ) -> RelationDef:
         if len(content) > self.max_upload_bytes:
             raise DatasetError(
                 f"File exceeds max size of {self.max_upload_bytes // (1024 * 1024)} MB"
@@ -101,7 +128,6 @@ class UserDatasetStore:
             name = re.sub(r"[^A-Za-z0-9_]", "_", h.strip()) or f"col{i+1}"
             if name[0].isdigit():
                 name = f"c_{name}"
-            # ensure uniqueness
             base = name
             n = 2
             while name in normalized_headers:
@@ -110,7 +136,6 @@ class UserDatasetStore:
             normalized_headers.append(name)
         headers = normalized_headers
 
-        # Pad/truncate rows to header width
         fixed_rows: list[list[str]] = []
         for row in data_rows:
             cells = list(row) + [""] * max(0, len(headers) - len(row))
@@ -131,16 +156,7 @@ class UserDatasetStore:
         rel_name = relation_name or _safe_rel_name(Path(filename).stem)
         if not SAFE_NAME.match(rel_name):
             raise DatasetError(f"Invalid relation name: {rel_name}")
-        uid = str(uuid.uuid4())[:8]
-        group = GroupDef(
-            id=f"upload-csv-{uid}",
-            name=dataset_name or f"CSV: {filename}",
-            description=f"Uploaded CSV ({filename})",
-            relations={
-                rel_name: RelationDef(name=rel_name, columns=columns, rows=rows)
-            },
-        )
-        return self.add_group(group)
+        return RelationDef(name=rel_name, columns=columns, rows=rows)
 
     def from_sqlite(self, *, filename: str, content: bytes) -> GroupDef:
         if len(content) > self.max_upload_bytes:
