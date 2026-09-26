@@ -1,5 +1,16 @@
 # Development
 
+## One-command local stack
+
+From the repo root:
+
+```bash
+./start.sh          # macOS / Linux
+.\start.ps1         # Windows PowerShell
+```
+
+Use `--setup` / `-Setup` to install dependencies without starting servers, or `--docker` / `-Docker` to use Compose.
+
 ## Backend
 
 ```bash

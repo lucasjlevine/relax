@@ -6,25 +6,58 @@ Write RelAlg or SQL against teaching datasets, execute instantly, inspect a resu
 
 ## Quickstart
 
-### Prerequisites
+### One-command start (recommended)
+
+Installs dependencies (first run) and starts the backend + frontend.
+
+**macOS / Linux**
+
+```bash
+chmod +x start.sh   # once
+./start.sh
+```
+
+**Windows (PowerShell)**
+
+```powershell
+.\start.ps1
+```
+
+If PowerShell blocks scripts, run once: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
+
+Then open:
+
+- App: http://localhost:3000
+- Calculator: http://localhost:3000/calc
+- Guide: http://localhost:3000/guide
+- API docs: http://localhost:8000/docs
+
+Options:
+
+| Flag | Meaning |
+|------|---------|
+| `--setup` / `-Setup` | Install deps only |
+| `--docker` / `-Docker` | Run via Docker Compose instead |
+
+### Prerequisites (local start)
 
 - Node.js 20+
 - Python 3.12+
-- (Optional) Docker
+- (Optional) [Docker Desktop](https://www.docker.com/products/docker-desktop/) for `--docker` / `-Docker`
 
-### Backend
+### Manual start
+
+**Backend**
 
 ```bash
 cd backend
 python -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate   # Windows: .venv\Scripts\Activate.ps1
 pip install -e ".[dev]"
 uvicorn app.main:app --reload --port 8000
 ```
 
-API docs: http://localhost:8000/docs
-
-### Frontend
+**Frontend**
 
 ```bash
 cd frontend
@@ -32,12 +65,11 @@ npm install
 npm run dev
 ```
 
-App: http://localhost:3000 · Calculator: http://localhost:3000/calc · Guide: http://localhost:3000/guide
-
-### Docker Compose
+**Docker Compose**
 
 ```bash
 docker compose up --build
+# or: ./start.sh --docker   /   .\start.ps1 -Docker
 ```
 
 ## What matters most
@@ -90,6 +122,8 @@ WHERE dept = 'Engineering'
 
 ```
 relax/
+├── start.sh      # macOS / Linux one-command start
+├── start.ps1     # Windows one-command start
 ├── frontend/     # Next.js UI (landing, /calc, /guide)
 ├── backend/      # FastAPI + DuckDB engine
 ├── docs/         # User guide, syntax, API, architecture
