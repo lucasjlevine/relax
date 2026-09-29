@@ -10,12 +10,6 @@ prefixed with /api — merge those back so routing works.
 
 from __future__ import annotations
 
-from a2wsgi import ASGIMiddleware
-
-from app.main import app as asgi_app
-
-_asgi_wsgi = ASGIMiddleware(asgi_app)
-
 
 def _full_path(environ: dict) -> str:
     script = environ.get("SCRIPT_NAME") or ""
@@ -28,19 +22,50 @@ def _full_path(environ: dict) -> str:
     return path or "/"
 
 
+def _health(environ, start_response):
+    body = b'{"status":"ok","via":"wsgi"}'
+    start_response(
+        "200 OK",
+        [
+            ("Content-Type", "application/json; charset=utf-8"),
+            ("Content-Length", str(len(body))),
+            ("Cache-Control", "no-store"),
+            ("X-Relax-Backend", "wsgi-health"),
+        ],
+    )
+    return [body]
+
+
+def _load_asgi_wsgi():
+    from a2wsgi import ASGIMiddleware
+    from app.main import app as asgi_app
+
+    return ASGIMiddleware(asgi_app)
+
+
+_asgi_wsgi = None
+
+
 def application(environ, start_response):
+    global _asgi_wsgi
+
     full = _full_path(environ)
 
-    # Plain WSGI health — bypasses a2wsgi so we can verify Unit routing.
+    # Plain WSGI health — no FastAPI/a2wsgi import required.
     if full.rstrip("/") == "/api/health":
-        body = b'{"status":"ok","via":"wsgi"}'
+        return _health(environ, start_response)
+
+    try:
+        if _asgi_wsgi is None:
+            _asgi_wsgi = _load_asgi_wsgi()
+    except Exception as exc:  # noqa: BLE001 — surface import errors to the client
+        body = f'{{"status":"error","detail":{exc!r}}}'.encode()
         start_response(
-            "200 OK",
+            "500 Internal Server Error",
             [
                 ("Content-Type", "application/json; charset=utf-8"),
                 ("Content-Length", str(len(body))),
-                ("Cache-Control", "no-store"),
-                ("X-Relax-Backend", "wsgi-health"),
+                ("X-Relax-Backend", "wsgi-import-error"),
             ],
         )
         return [body]
