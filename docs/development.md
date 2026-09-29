@@ -37,7 +37,7 @@ Merge when tests and a manual calculator smoke check pass.
 
 ## Silk deployment
 
-Branch `deploy/silk` packages the stack for [UVM Silk](https://silk.uvm.edu/) (NGINX Unit, not port-binding systemd). See [silk-deploy.md](./silk-deploy.md) and scripts under `deploy/silk/`.
+Branch `deploy/silk`: Next on Unit, FastAPI on `systemd --user` (localhost), `/api` rewritten by Next. See [silk-deploy.md](./silk-deploy.md).
 
 ## Docs for contributors
 

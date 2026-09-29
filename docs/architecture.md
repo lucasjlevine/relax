@@ -26,7 +26,7 @@ FastAPI
 - App Router pages: `/` (landing + guide), `/calc` (calculator)
 - Resizable dataset sidebar (Manage / Group auto-expand)
 - Shadcn primitives + CodeMirror editor (query + Group Editor)
-- Calls `NEXT_PUBLIC_API_URL` (API root including prefix, e.g. `http://localhost:8000/api` or Silk `/relax-api`) for datasets, mutations, and query execution
+- Calls `NEXT_PUBLIC_API_URL` (API root including prefix, e.g. `http://localhost:8000/api` or Silk `/api`) for datasets, mutations, and query execution
 
 ## Backend
 

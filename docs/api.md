@@ -1,6 +1,6 @@
 # API reference
 
-Base URL: `http://localhost:8000/api` (Silk: `/relax-api`)
+Base URL: `http://localhost:8000/api` (Silk: same-origin `/api`, proxied by Next to localhost uvicorn)
 
 ## `GET /api/health`
 

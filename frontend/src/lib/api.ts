@@ -1,5 +1,5 @@
-/** Full API root including path prefix (local /api, Silk /relax-api). */
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api";
+/** Full API root including path prefix. Silk: `/api` (Next proxies to uvicorn). */
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
 
 export type ColumnInfo = { name: string; type: string };
 export type RelationInfo = {

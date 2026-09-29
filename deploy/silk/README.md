@@ -1,15 +1,12 @@
 # Silk (jlhorton)
 
-| URL | Mechanism |
-|-----|-----------|
-| `/relax/` | Static Next export in `~/www-root/public/relax/` |
-| `/relax-api/` | Python Unit app only |
-
-**Do not** run Next under Unit — proxy errors / stuck `prototype` process.
+- **Next** → Unit Node at `/*`
+- **FastAPI** → `systemd --user` on `127.0.0.1:18765`
+- Browser `/api/*` → Next rewrite → localhost
 
 ```bash
-FORCE=1 ./deploy/silk/kill-stale-apps.sh
 ./deploy/silk/install-on-silk.sh
+loginctl enable-linger jlhorton   # once
 ```
 
-Details: [docs/silk-deploy.md](../../docs/silk-deploy.md)
+See [docs/silk-deploy.md](../../docs/silk-deploy.md).

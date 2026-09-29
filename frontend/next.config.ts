@@ -2,17 +2,25 @@ import type { NextConfig } from "next";
 import path from "path";
 
 /**
- * Silk: static export under /relax/ (no Node Unit app — Unit’s Node adapter
- * breaks Next App Router). API stays on /relax-api via Python Unit.
+ * Silk: Next (Unit/Node) owns the site. FastAPI runs on localhost via
+ * systemd; rewrites proxy browser /api/* → that process.
  */
 const silkDeploy = process.env.SILK_DEPLOY === "1";
+const apiUpstream =
+  process.env.RELAX_API_UPSTREAM || "http://127.0.0.1:18765";
 
 const nextConfig: NextConfig = {
-  output: silkDeploy ? "export" : "standalone",
-  basePath: silkDeploy ? "/relax" : undefined,
-  trailingSlash: silkDeploy ? true : undefined,
+  output: "standalone",
   compress: false,
-  images: silkDeploy ? { unoptimized: true } : undefined,
+  async rewrites() {
+    if (!silkDeploy) return [];
+    return [
+      {
+        source: "/api/:path*",
+        destination: `${apiUpstream}/api/:path*`,
+      },
+    ];
+  },
   webpack: (config) => {
     config.resolve.alias = {
       ...config.resolve.alias,
