@@ -35,6 +35,10 @@ NEXT_PUBLIC_API_URL=http://localhost:8000 npm run dev
 Prefer small branches such as `feat/relalg-core`, `feat/sql-mode`, `feat/calc-ui`.
 Merge when tests and a manual calculator smoke check pass.
 
+## Silk deployment
+
+Branch `deploy/silk` packages the stack for [UVM Silk](https://silk.uvm.edu/) (NGINX Unit, not port-binding systemd). See [silk-deploy.md](./silk-deploy.md) and scripts under `deploy/silk/`.
+
 ## Docs for contributors
 
 Start with [user-guide.md](./user-guide.md) for product behavior, then [architecture.md](./architecture.md).

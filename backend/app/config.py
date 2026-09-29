@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     max_rows: int = 1000
     default_limit: int = 100
     query_timeout_ms: int = 5000
+    # JSON list in env, e.g. CORS_ORIGINS=["https://NETID.w3.uvm.edu"]
     cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
     owner_cookie_name: str = "relax_owner"
 

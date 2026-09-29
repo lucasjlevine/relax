@@ -138,3 +138,4 @@ relax/
 - [API reference](docs/api.md)
 - [Architecture](docs/architecture.md)
 - [Development](docs/development.md)
+- [Silk deploy (UVM)](docs/silk-deploy.md) — Next.js + FastAPI on [silk.uvm.edu](https://silk.uvm.edu/)

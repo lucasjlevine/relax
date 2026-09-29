@@ -9,6 +9,7 @@ backend/.pytest_cache/
 backend/.ruff_cache/
 dist/
 build/
+deploy/silk/dist/
 
 # Env / secrets
 .env

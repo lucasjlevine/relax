@@ -1,0 +1,27 @@
+# OPTIONAL — not used for Silk web traffic.
+#
+# Silk requires Node/Python web apps to run under NGINX Unit via `.silk.ini`
+# (see https://silk.uvm.edu/hosting-questions/). Apps must not bind their own
+# listening sockets. Prefer the Unit layout in deploy/silk/.silk.ini.
+#
+# Keep this file only if you deploy elsewhere with user-level systemd:
+#   mkdir -p ~/.config/systemd/user
+#   cp relax-api.service.example ~/.config/systemd/user/relax-api.service
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now relax-api.service
+
+[Unit]
+Description=relax FastAPI (user service — non-Silk)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/relax/api
+Environment=DATASETS_PATH=data/local_groups
+Environment=UPLOAD_DIR=data/uploads
+Environment=USER_DATASETS_DIR=data/user_datasets
+ExecStart=%h/venvs/relax/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
