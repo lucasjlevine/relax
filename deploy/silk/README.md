@@ -1,19 +1,29 @@
-# Silk packaging
+# Silk packaging (jlhorton)
 
-Scripts and Unit config for hosting relax on [UVM Silk](https://silk.uvm.edu/).
+Repo on Silk: **`~/www-root/relax`**. Unit config must be at **`~/www-root/.silk.ini`**.
 
 **Full guide:** [docs/silk-deploy.md](../../docs/silk-deploy.md)
 
-| Path | Purpose |
-|------|---------|
-| `.silk.ini` | NGINX Unit app definitions (`/api*` + `/*`) |
-| `build-web.sh` | Next.js standalone → `dist/web` |
-| `prepare-api.sh` | FastAPI tree → `dist/api` |
-| `sync-to-silk.sh` | rsync to `NETID@w3.uvm.edu` |
-| `systemd/` | Example user unit for **non-Silk** hosts only |
+## Quick answer: where is the frontend build?
 
-Quick path:
+`deploy/silk/dist/` is **gitignored**. Create it on Silk:
 
 ```bash
-./deploy/silk/sync-to-silk.sh --build NETID
+cd ~/www-root/relax
+./deploy/silk/build-web.sh
+# → deploy/silk/dist/web/server.js
 ```
+
+Or run everything:
+
+```bash
+./deploy/silk/install-on-silk.sh
+```
+
+| Path | Purpose |
+|------|---------|
+| `.silk.ini` | Template — copy to `~/www-root/.silk.ini` |
+| `build-web.sh` | Next standalone → `dist/web` |
+| `install-on-silk.sh` | Build + venv + install ini + `silk app load` |
+| `prepare-api.sh` | Optional staged API tree (not needed if Unit uses `relax/backend`) |
+| `sync-to-silk.sh` | Laptop rsync to flat `www-root/{web,api}` (alternate layout) |

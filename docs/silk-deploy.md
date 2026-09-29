@@ -1,127 +1,112 @@
 # Deploying relax on UVM Silk
 
-This app targets [UVM Silk](https://silk.uvm.edu/) hosting: Next.js (Node) for the UI and FastAPI for `/api/*`, both under **NGINX Unit** via `.silk.ini`.
+Target: [UVM Silk](https://silk.uvm.edu/) for NetID **jlhorton**, with the git repo at:
 
-Silk does **not** allow web apps to bind their own ports or run as listening `systemctl` services. Use Unit (`silk app … load`). User systemd is only relevant off Silk; see `deploy/silk/systemd/` for a non-Silk example.
-
-## Architecture on Silk
-
-| Piece | Silk app | URI | How it runs |
-|-------|----------|-----|-------------|
-| FastAPI | `[app: api]` | `/api*` | WSGI via `a2wsgi` (`backend/wsgi.py`) |
-| Next.js | `[app: web]` | `/*` | Standalone `server.js` (Node 22) |
-
-The browser talks to the same host: `NEXT_PUBLIC_API_URL` is empty at build time, so the UI calls `/api/...` on `https://NETID.w3.uvm.edu`.
-
-```
-Browser → https://NETID.w3.uvm.edu/calc
-                → Unit [app: web]  → Next.js
-Browser → https://NETID.w3.uvm.edu/api/...
-                → Unit [app: api]  → FastAPI (WSGI)
+```text
+~/www-root/relax          ← this repository
+~/www-root/.silk.ini      ← Unit config (site root, NOT inside the repo)
+~/www-root/public         ← static fallback document-root
+~/venvs/relax             ← Python venv for FastAPI deps
 ```
 
-Official refs:
+Silk does **not** allow web apps to bind their own ports. Use NGINX Unit via `.silk.ini` and `silk app … load`.
 
-- [Node.js on Silk](https://silk.uvm.edu/manual/nodejs/)
-- [Python on Silk](https://silk.uvm.edu/manual/python/)
-- [`.silk.ini` options](https://silk.uvm.edu/manual/config-options/)
-- [Hosting overview](https://silk.uvm.edu/hosting-questions/)
+## Why things were “not found”
 
-## Prerequisites
+1. **`.silk.ini` must live at the site root** (`~/www-root/.silk.ini`). Silk does not read `relax/deploy/silk/.silk.ini` by itself — copy it up one level.
+2. **`root` is relative to `~/www-root`**, not to the repo. For this layout that means `relax/backend` and `relax/deploy/silk/dist/web`.
+3. **`deploy/silk/dist/web` is not in git.** It is created by `build-web.sh` (Next.js standalone). Until you build, Unit cannot find `server.js`.
 
-- Silk account (`ssh NETID@w3.uvm.edu`) — request via [SAA](https://silk.uvm.edu/) if needed
-- Local: Node.js 22+ (or 20+), Python 3.12+, `rsync`, SSH access to Silk
-- This branch: `deploy/silk`
+## Is there supposed to be a frontend build directory?
 
-## One-time Silk setup
+Yes. After `./deploy/silk/build-web.sh` (or `install-on-silk.sh`):
+
+```text
+deploy/silk/dist/web/          ← gitignored runtime tree for Unit
+  server.js                    ← startup-script
+  public/
+  .next/static/
+  …
+```
+
+`prepare-api.sh` / `dist/api` are optional when the repo is on Silk — Unit can run Python straight from `relax/backend`. The frontend **must** be built; source `frontend/` is not what Unit runs.
+
+## Architecture
+
+| Piece | Silk app | `root` (under www-root) | URI |
+|-------|----------|-------------------------|-----|
+| FastAPI | `[app: api]` | `relax/backend` | `/api*` |
+| Next.js | `[app: web]` | `relax/deploy/silk/dist/web` | `/*` |
+
+Same-origin: production UI is built with empty `NEXT_PUBLIC_API_URL`, so the browser calls `/api/...` on `https://jlhorton.w3.uvm.edu`.
+
+Official refs: [Node](https://silk.uvm.edu/manual/nodejs/), [Python](https://silk.uvm.edu/manual/python/), [config](https://silk.uvm.edu/manual/config-options/), [overview](https://silk.uvm.edu/hosting-questions/).
+
+## Recommended: build and install on Silk
+
+SSH in, then from the clone:
 
 ```bash
-ssh NETID@w3.uvm.edu
-
-# Python 3.12 venv for the API (path must match .silk.ini venv-path)
-mkdir -p ~/venvs
-python3 -m venv ~/venvs/relax
-
-# Site root is usually ~/www-root — confirm with `silk account info` / ls
-mkdir -p ~/www-root/public ~/www-root/web ~/www-root/api
-```
-
-Copy and edit the Unit config:
-
-```bash
-# From your laptop (after cloning this branch)
-scp deploy/silk/.silk.ini NETID@w3.uvm.edu:~/www-root/.silk.ini
-```
-
-On Silk, edit `~/www-root/.silk.ini`:
-
-1. Set `venv-path` to the absolute path of `~/venvs/relax` (resolve with `readlink -f ~/venvs/relax`).
-2. Set `env.CORS_ORIGINS` to your hostname, e.g. `["https://NETID.w3.uvm.edu"]`.
-3. Keep `[app: api]` URI `/api*` and `[app: web]` URI `/*`.
-
-## Build and sync (laptop)
-
-From the repo root on `deploy/silk`:
-
-```bash
+ssh jlhorton@w3.uvm.edu
+cd ~/www-root/relax
+git checkout deploy/silk   # if needed
 chmod +x deploy/silk/*.sh
-./deploy/silk/sync-to-silk.sh --build NETID
+./deploy/silk/install-on-silk.sh
 ```
 
-Or step by step:
+That script:
+
+1. Runs `build-web.sh` → `deploy/silk/dist/web`
+2. Creates `~/venvs/relax` and `pip install`s `backend/`
+3. Copies `.silk.ini` to `~/www-root/.silk.ini` (rewrites `venv-path` to the absolute path)
+4. Runs `silk update` and loads `/api` + `/*`
+
+Manual equivalent:
 
 ```bash
-./deploy/silk/build-web.sh      # → deploy/silk/dist/web
-./deploy/silk/prepare-api.sh    # → deploy/silk/dist/api
-./deploy/silk/sync-to-silk.sh NETID
-```
-
-Optional env when building the UI against a different API origin:
-
-```bash
-NEXT_PUBLIC_API_URL=https://other.example.edu ./deploy/silk/build-web.sh
-```
-
-## Install API deps on Silk (after each sync that changes Python deps)
-
-```bash
-ssh NETID@w3.uvm.edu
-~/venvs/relax/bin/pip install ~/www-root/api
-chmod u+x ~/www-root/api/wsgi.py ~/www-root/web/server.js
-```
-
-## Load / reload apps
-
-```bash
-ssh NETID@w3.uvm.edu
+cd ~/www-root/relax
+./deploy/silk/build-web.sh
+python3 -m venv ~/venvs/relax
+~/venvs/relax/bin/pip install ~/www-root/relax/backend
+chmod u+x backend/wsgi.py deploy/silk/dist/web/server.js
+mkdir -p ~/www-root/public backend/data/uploads backend/data/user_datasets
+cp deploy/silk/.silk.ini ~/www-root/.silk.ini
+# confirm venv-path = output of: readlink -f ~/venvs/relax
 silk update
-silk app NETID.w3.uvm.edu/api load
-silk app NETID.w3.uvm.edu load
+silk app jlhorton.w3.uvm.edu/api load
+silk app jlhorton.w3.uvm.edu load
 ```
 
-If you only changed one side, reload that app’s URI. Logs:
+Smoke:
 
-- App server log paths are documented on the [Node](https://silk.uvm.edu/manual/nodejs/) / [Python](https://silk.uvm.edu/manual/python/) pages (Unit `unit.log` under the account).
+- https://jlhorton.w3.uvm.edu/api/health
+- https://jlhorton.w3.uvm.edu/calc
 
-Smoke check:
+## Laptop → Silk sync (optional)
 
-- `https://NETID.w3.uvm.edu/api/health` → `{"status":"ok"}`
-- `https://NETID.w3.uvm.edu/calc` → calculator UI
+If you build on a laptop instead of on Silk:
 
-## Writable data
+```bash
+./deploy/silk/build-web.sh
+# rsync dist/web into ~/www-root/relax/deploy/silk/dist/web on Silk
+# keep backend in the git clone; only the web dist must be present
+```
 
-The API writes under `api/data/uploads` and `api/data/user_datasets`. Ensure those directories exist and are writable by your NetID after sync (`prepare-api.sh` creates them; rsync excludes local scratch JSON).
+`sync-to-silk.sh` still targets flat `~/www-root/{web,api}` — that layout is **not** what jlhorton’s repo-under-www-root setup uses. Prefer `install-on-silk.sh` on the server.
 
-## Why not `systemctl --user` on Silk?
+## After code changes
 
-Silk’s hosting overview states that Python/Node web apps must be launched through the app server and **cannot** be started as services that listen for network requests. Unit owns the socket; your `startup-script` is loaded by Unit.
-
-If you later run the stack on a VM or laptop with user systemd, see `deploy/silk/systemd/relax-api.service.example`.
+| Change | Action |
+|--------|--------|
+| Frontend | `./deploy/silk/build-web.sh` then `silk app jlhorton.w3.uvm.edu load` |
+| Backend Python | `~/venvs/relax/bin/pip install ~/www-root/relax/backend` then `silk app jlhorton.w3.uvm.edu/api load` |
+| `.silk.ini` | Edit `~/www-root/.silk.ini`, `silk update`, reload apps |
 
 ## Checklist
 
-- [ ] `.silk.ini` on site root with real `venv-path` and `CORS_ORIGINS`
-- [ ] `~/venvs/relax` created; `pip install` of `~/www-root/api` succeeds
-- [ ] `wsgi.py` and `server.js` are executable (`chmod u+x`)
-- [ ] `silk app …/api load` and `silk app … load` succeed
-- [ ] `/api/health` and `/calc` work over HTTPS
+- [ ] Repo at `~/www-root/relax`
+- [ ] `~/www-root/.silk.ini` present (copied from `deploy/silk/.silk.ini`)
+- [ ] `deploy/silk/dist/web/server.js` exists (built)
+- [ ] `~/venvs/relax` installed; `venv-path` matches `readlink -f ~/venvs/relax`
+- [ ] `backend/wsgi.py` and `dist/web/server.js` are executable
+- [ ] `silk app jlhorton.w3.uvm.edu/api load` and `silk app jlhorton.w3.uvm.edu load` succeed
