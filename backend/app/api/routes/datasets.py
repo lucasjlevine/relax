@@ -24,7 +24,7 @@ from app.models.schemas import (
     SetRowsRequest,
 )
 
-router = APIRouter(prefix="/api/datasets", tags=["datasets"])
+router = APIRouter(prefix="/datasets", tags=["datasets"])
 
 
 def _detail_from_group(

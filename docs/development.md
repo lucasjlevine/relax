@@ -27,7 +27,7 @@ pytest
 ```bash
 cd frontend
 npm install
-NEXT_PUBLIC_API_URL=http://localhost:8000 npm run dev
+NEXT_PUBLIC_API_URL=http://localhost:8000/api npm run dev
 ```
 
 ## Feature branches

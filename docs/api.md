@@ -1,6 +1,6 @@
 # API reference
 
-Base URL: `http://localhost:8000`
+Base URL: `http://localhost:8000/api` (Silk: `/relax-api`)
 
 ## `GET /api/health`
 

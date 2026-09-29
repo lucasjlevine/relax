@@ -141,7 +141,7 @@ BACKEND_PID=$!
 info "Starting frontend on http://localhost:3000 …"
 (
   cd "$FRONTEND_DIR"
-  export NEXT_PUBLIC_API_URL="${NEXT_PUBLIC_API_URL:-http://localhost:8000}"
+  export NEXT_PUBLIC_API_URL="${NEXT_PUBLIC_API_URL:-http://localhost:8000/api}"
   exec npm run dev -- --hostname 127.0.0.1 --port 3000
 ) &
 FRONTEND_PID=$!

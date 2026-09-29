@@ -19,7 +19,7 @@ from app.parsers.relalg.statements import split_relalg_statements
 from app.parsers.sql.validator import SqlValidationError, validate_sql
 import sqlglot
 
-router = APIRouter(prefix="/api", tags=["query"])
+router = APIRouter(tags=["query"])
 
 
 @router.post("/query", response_model=QueryResponse)

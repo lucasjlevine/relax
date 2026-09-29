@@ -171,7 +171,7 @@ $backend = Start-Process -FilePath $VenvPython `
 
 Write-Info "Starting frontend on http://localhost:3000 …"
 if (-not $env:NEXT_PUBLIC_API_URL) {
-    $env:NEXT_PUBLIC_API_URL = "http://localhost:8000"
+    $env:NEXT_PUBLIC_API_URL = "http://localhost:8000/api"
 }
 
 # npm is a .cmd shim on Windows — invoke via cmd.exe

@@ -4,25 +4,28 @@
 Silk Python apps use the WSGI model (https://silk.uvm.edu/manual/python/).
 FastAPI is ASGI, so we bridge with a2wsgi.
 
-Unit may set SCRIPT_NAME when matching uri=/api* while our routes are
-prefixed with /api — merge those back so routing works.
+On Silk, URI is /relax-api* and API_ROOT_PATH=/relax-api.
 """
 
 from __future__ import annotations
+
+import os
+
+# Match FastAPI api_root_path (Silk sets API_ROOT_PATH=/relax-api)
+_API_ROOT = (os.environ.get("API_ROOT_PATH") or "/api").rstrip("/") or "/api"
 
 
 def _full_path(environ: dict) -> str:
     script = environ.get("SCRIPT_NAME") or ""
     path = environ.get("PATH_INFO") or ""
     if script and not path.startswith(script):
-        # e.g. SCRIPT_NAME=/api PATH_INFO=/health → /api/health
         if not path.startswith("/"):
             path = "/" + path
         return script.rstrip("/") + path
     return path or "/"
 
 
-def _health(environ, start_response):
+def _health(_environ, start_response):
     body = b'{"status":"ok","via":"wsgi"}'
     start_response(
         "200 OK",
@@ -51,14 +54,13 @@ def application(environ, start_response):
 
     full = _full_path(environ)
 
-    # Plain WSGI health — no FastAPI/a2wsgi import required.
-    if full.rstrip("/") == "/api/health":
+    if full.rstrip("/") in (f"{_API_ROOT}/health", "/api/health"):
         return _health(environ, start_response)
 
     try:
         if _asgi_wsgi is None:
             _asgi_wsgi = _load_asgi_wsgi()
-    except Exception as exc:  # noqa: BLE001 — surface import errors to the client
+    except Exception as exc:  # noqa: BLE001
         body = f'{{"status":"error","detail":{exc!r}}}'.encode()
         start_response(
             "500 Internal Server Error",
@@ -70,12 +72,12 @@ def application(environ, start_response):
         )
         return [body]
 
-    # Ensure FastAPI sees the /api/... path it was defined with.
-    script = environ.get("SCRIPT_NAME") or ""
+    # Unit may set SCRIPT_NAME to the app prefix; FastAPI expects full paths.
+    script = (environ.get("SCRIPT_NAME") or "").rstrip("/")
     path = environ.get("PATH_INFO") or ""
-    if script.rstrip("/") == "/api" and not path.startswith("/api"):
+    if script in (_API_ROOT, "/api", "/relax-api") and not path.startswith(script):
         environ = dict(environ)
-        environ["PATH_INFO"] = "/api" + (path if path.startswith("/") else f"/{path}")
+        environ["PATH_INFO"] = script + (path if path.startswith("/") else f"/{path}")
         environ["SCRIPT_NAME"] = ""
 
     def _start_response(status, headers, exc_info=None):

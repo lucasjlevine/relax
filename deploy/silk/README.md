@@ -1,19 +1,14 @@
 # Silk packaging (jlhorton)
 
-Repo: **`~/www-root/relax`**. Config: **`~/www-root/.silk.ini`**.
+| URL | App |
+|-----|-----|
+| `/relax/` | Next (Unit nodejs, `basePath=/relax`) |
+| `/relax-api/` | FastAPI (Unit python) |
 
-## Layout
-
-| Piece | How it runs |
-|-------|-------------|
-| UI | **Static** Next export → `[general] document-root` |
-| API | **One** Python Unit app → `uri = /api*` |
-
-We do **not** run a Node Unit app. A catch-all Next `/*` app was stealing `/api`.
-
-**Guide:** [docs/silk-deploy.md](../../docs/silk-deploy.md)
+`/relax/*` and `/relax-api*` do not overlap (unlike `/relax*` vs `/relax-api`).
 
 ```bash
-cd ~/www-root/relax
 ./deploy/silk/install-on-silk.sh
 ```
+
+See [docs/silk-deploy.md](../../docs/silk-deploy.md).

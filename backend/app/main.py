@@ -31,6 +31,7 @@ class OwnerCookieMiddleware(BaseHTTPMiddleware):
 
 def create_app() -> FastAPI:
     settings = get_settings()
+    api_root = (settings.api_root_path or "/api").rstrip("/") or "/api"
     app = FastAPI(title="relax API", version="0.3.0")
 
     app.add_middleware(
@@ -60,10 +61,10 @@ def create_app() -> FastAPI:
     )
     app.state.user_store = user_store
     app.state.catalog = WorkingCatalog(static, user_store)
-    app.include_router(datasets.router)
-    app.include_router(query.router)
+    app.include_router(datasets.router, prefix=api_root)
+    app.include_router(query.router, prefix=api_root)
 
-    @app.get("/api/health", response_model=HealthResponse)
+    @app.get(f"{api_root}/health", response_model=HealthResponse)
     def health() -> HealthResponse:
         return HealthResponse(status="ok")
 
