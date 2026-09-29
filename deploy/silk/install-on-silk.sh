@@ -43,7 +43,7 @@ Environment=DATASETS_PATH=data/local_groups
 Environment=UPLOAD_DIR=data/uploads
 Environment=USER_DATASETS_DIR=data/user_datasets
 Environment=API_ROOT_PATH=/api
-Environment=CORS_ORIGINS=["https://${HOST}"]
+Environment=CORS_ORIGINS=https://${HOST}
 ExecStart=${VENV}/bin/uvicorn app.main:app --host 127.0.0.1 --port ${API_PORT} --proxy-headers
 Restart=on-failure
 RestartSec=3
