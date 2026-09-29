@@ -1,29 +1,19 @@
 # Silk packaging (jlhorton)
 
-Repo on Silk: **`~/www-root/relax`**. Unit config must be at **`~/www-root/.silk.ini`**.
+Repo: **`~/www-root/relax`**. Config: **`~/www-root/.silk.ini`**.
 
-**Full guide:** [docs/silk-deploy.md](../../docs/silk-deploy.md)
+## Layout
 
-## Quick answer: where is the frontend build?
+| Piece | How it runs |
+|-------|-------------|
+| UI | **Static** Next export → `[general] document-root` |
+| API | **One** Python Unit app → `uri = /api*` |
 
-`deploy/silk/dist/` is **gitignored**. Create it on Silk:
+We do **not** run a Node Unit app. A catch-all Next `/*` app was stealing `/api`.
+
+**Guide:** [docs/silk-deploy.md](../../docs/silk-deploy.md)
 
 ```bash
 cd ~/www-root/relax
-./deploy/silk/build-web.sh
-# → deploy/silk/dist/web/server.js
-```
-
-Or run everything:
-
-```bash
 ./deploy/silk/install-on-silk.sh
 ```
-
-| Path | Purpose |
-|------|---------|
-| `.silk.ini` | Template — copy to `~/www-root/.silk.ini` |
-| `build-web.sh` | Next standalone → `dist/web` |
-| `install-on-silk.sh` | Build + venv + install ini + `silk app load` |
-| `prepare-api.sh` | Optional staged API tree (not needed if Unit uses `relax/backend`) |
-| `sync-to-silk.sh` | Laptop rsync to flat `www-root/{web,api}` (alternate layout) |

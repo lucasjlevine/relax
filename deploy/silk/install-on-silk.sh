@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Run ON Silk from the repo root (or this script's location), when the clone is at
-# ~/www-root/relax. Builds the frontend, installs API deps, installs .silk.ini.
+# Run ON Silk from ~/www-root/relax. Builds static UI, installs API, wires .silk.ini.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -10,20 +9,18 @@ VENV="${VENV:-$HOME/venvs/relax}"
 
 echo "==> Repo:       $ROOT"
 echo "==> Site root:  $SITE_ROOT"
-echo "==> Expected:   \$HOME/www-root/relax → site .silk.ini at \$HOME/www-root/.silk.ini"
 
 if [[ "$(basename "$ROOT")" != "relax" ]] || [[ "$(basename "$SITE_ROOT")" != "www-root" ]]; then
   echo "warning: expected ~/www-root/relax; got ROOT=$ROOT SITE_ROOT=$SITE_ROOT" >&2
-  echo "         continuing — override SITE_ROOT if needed" >&2
 fi
 
-mkdir -p "$SITE_ROOT/public" "$HOME/venvs"
+mkdir -p "$HOME/venvs"
 
-echo "==> Building Next.js standalone → deploy/silk/dist/web"
+echo "==> Building static Next export → deploy/silk/dist/web"
 "$ROOT/deploy/silk/build-web.sh"
 
-if [[ ! -f "$ROOT/deploy/silk/dist/web/server.js" ]]; then
-  echo "error: missing $ROOT/deploy/silk/dist/web/server.js after build" >&2
+if [[ ! -f "$ROOT/deploy/silk/dist/web/index.html" ]]; then
+  echo "error: missing $ROOT/deploy/silk/dist/web/index.html after build" >&2
   exit 1
 fi
 
@@ -36,7 +33,7 @@ echo "==> pip install backend into venv"
 "$VENV/bin/pip" install -U pip
 "$VENV/bin/pip" install "$ROOT/backend"
 
-chmod u+x "$ROOT/backend/wsgi.py" "$ROOT/deploy/silk/dist/web/server.js"
+chmod u+x "$ROOT/backend/wsgi.py"
 mkdir -p "$ROOT/backend/data/uploads" "$ROOT/backend/data/user_datasets"
 
 INI_SRC="$ROOT/deploy/silk/.silk.ini"
@@ -44,31 +41,34 @@ INI_DST="$SITE_ROOT/.silk.ini"
 echo "==> Installing $INI_DST"
 cp "$INI_SRC" "$INI_DST"
 
-# Ensure venv-path in .silk.ini matches this machine
 ABS_VENV="$(readlink -f "$VENV" 2>/dev/null || realpath "$VENV")"
-if grep -q '^venv-path' "$INI_DST"; then
-  # portable sed: rewrite venv-path line
-  tmp="$(mktemp)"
-  sed "s|^venv-path = .*|venv-path = ${ABS_VENV}|" "$INI_DST" >"$tmp"
-  mv "$tmp" "$INI_DST"
-fi
+tmp="$(mktemp)"
+sed "s|^venv-path = .*|venv-path = ${ABS_VENV}|" "$INI_DST" >"$tmp"
+mv "$tmp" "$INI_DST"
 
-echo "==> silk site update + load apps"
+echo "==> silk site update + load API only (UI is static document-root)"
 silk site "${NETID}.w3.uvm.edu" update || true
+# Drop any old catch-all Node app if Silk still has it registered from earlier deploys.
+# Loading /api registers the Python app; static files need no app load.
 silk app "${NETID}.w3.uvm.edu/api" load
-silk app "${NETID}.w3.uvm.edu" load
 
 cat <<EOF
 
 Done.
 
 Smoke checks:
-  https://${NETID}.w3.uvm.edu/api/health
-  https://${NETID}.w3.uvm.edu/calc
+  curl -sS -D - --compressed "https://${NETID}.w3.uvm.edu/api/health"
+  # expect: X-Relax-Backend: wsgi-health  and  {"status":"ok","via":"wsgi"}
+  open https://${NETID}.w3.uvm.edu/calc
 
-If load fails, check Unit logs (see Silk Node/Python manual) and confirm:
-  - $INI_DST exists at site root
-  - $ROOT/deploy/silk/dist/web/server.js exists (run build-web.sh)
-  - $ROOT/backend/wsgi.py is executable
+If /api still 404s from Next, the old Node Unit app may still be loaded.
+Check unit logs and ask Silk/SAA to clear stale apps, or try:
+  silk app ${NETID}.w3.uvm.edu load
+only after removing the [app: web] section (already removed from .silk.ini).
+
+Confirm:
+  - $INI_DST has document-root = relax/deploy/silk/dist/web
+  - only [app: api] with uri = /api*
+  - $ROOT/deploy/silk/dist/web/index.html exists
   - venv-path is $ABS_VENV
 EOF

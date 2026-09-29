@@ -1,38 +1,32 @@
 #!/usr/bin/env bash
-# Build Next.js standalone output into deploy/silk/dist/web for Silk.
+# Build Next.js static export into deploy/silk/dist/web for Silk document-root.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 FRONTEND="$ROOT/frontend"
 OUT="$ROOT/deploy/silk/dist/web"
 
-# Same-origin: browser calls /api/* on the Silk hostname (Unit routes to FastAPI).
-# Do NOT set NODE_ENV=production before npm ci — that skips devDependencies
-# (typescript, eslint, etc.) and can break the Next production build.
+# Same-origin: browser calls /api/* on the Silk hostname (Unit → FastAPI).
+# Do NOT set NODE_ENV=production before npm ci — that skips devDependencies.
 export NEXT_PUBLIC_API_URL="${NEXT_PUBLIC_API_URL:-}"
+export SILK_STATIC=1
 
 echo "==> Installing frontend deps"
 cd "$FRONTEND"
 npm ci
 
-echo "==> Building Next.js (standalone), NEXT_PUBLIC_API_URL='${NEXT_PUBLIC_API_URL}'"
-# next build sets NODE_ENV=production itself
+echo "==> Building Next.js static export (SILK_STATIC=1), NEXT_PUBLIC_API_URL='${NEXT_PUBLIC_API_URL}'"
 npm run build
 
-if [[ ! -f "$FRONTEND/.next/standalone/server.js" ]]; then
-  echo "error: standalone server.js missing; ensure next.config has output: 'standalone'" >&2
+if [[ ! -f "$FRONTEND/out/index.html" ]]; then
+  echo "error: frontend/out/index.html missing after export build" >&2
   exit 1
 fi
 
 echo "==> Assembling $OUT"
 rm -rf "$OUT"
 mkdir -p "$OUT"
-cp -R "$FRONTEND/.next/standalone/." "$OUT/"
-mkdir -p "$OUT/.next"
-cp -R "$FRONTEND/.next/static" "$OUT/.next/static"
-if [[ -d "$FRONTEND/public" ]]; then
-  cp -R "$FRONTEND/public" "$OUT/public"
-fi
-chmod u+x "$OUT/server.js"
+cp -R "$FRONTEND/out/." "$OUT/"
 
-echo "==> Web build ready: $OUT"
+echo "==> Static web build ready: $OUT"
+echo "    Point Silk [general] document-root at relax/deploy/silk/dist/web"
