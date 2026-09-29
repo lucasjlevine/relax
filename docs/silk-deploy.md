@@ -79,8 +79,36 @@ silk app jlhorton.w3.uvm.edu load
 
 Smoke:
 
-- https://jlhorton.w3.uvm.edu/api/health
+```bash
+# Expect JSON + header X-Relax-Backend: wsgi-health (not binary garbage)
+curl -sS -D - --compressed "https://jlhorton.w3.uvm.edu/api/health"
+```
+
+- Browser: https://jlhorton.w3.uvm.edu/api/health → `{"status":"ok","via":"wsgi"}`
 - https://jlhorton.w3.uvm.edu/calc
+
+### Binary / gzip garbage from `/api/...`
+
+That payload starting with mojibake/`0x1f 0x8b` is **gzip**. Usual causes:
+
+1. **Next.js handled `/api/*`** (Python app not loaded or uri mismatch) — response is a compressed Next body.
+2. **Double gzip** (Next `compress` + Silk front proxy) — rebuild web after `compress: false`.
+3. **curl without decompress** — use `curl --compressed` or check headers with `curl -D -`.
+
+Check which app answered:
+
+```bash
+curl -sS -D - -o /dev/null "https://jlhorton.w3.uvm.edu/api/health" | grep -iE 'HTTP/|content-type|content-encoding|x-relax'
+```
+
+You want `X-Relax-Backend: wsgi-health` and `content-type: application/json`. If that header is missing, reload:
+
+```bash
+cp ~/www-root/relax/deploy/silk/.silk.ini ~/www-root/.silk.ini
+silk site jlhorton.w3.uvm.edu update
+silk app jlhorton.w3.uvm.edu/api load
+silk app jlhorton.w3.uvm.edu load
+```
 
 ## Laptop → Silk sync (optional)
 
