@@ -1,15 +1,18 @@
 import type { NextConfig } from "next";
 import path from "path";
 
-/** Silk: UI under /relax, API under /relax-api (non-overlapping Unit URIs). */
+/**
+ * Silk: static export under /relax/ (no Node Unit app — Unit’s Node adapter
+ * breaks Next App Router). API stays on /relax-api via Python Unit.
+ */
 const silkDeploy = process.env.SILK_DEPLOY === "1";
 
 const nextConfig: NextConfig = {
-  output: "standalone",
+  output: silkDeploy ? "export" : "standalone",
   basePath: silkDeploy ? "/relax" : undefined,
-  // Let Silk/Apache own Content-Encoding.
+  trailingSlash: silkDeploy ? true : undefined,
   compress: false,
-  // Explicit alias so production builds resolve @/* on Linux / Silk.
+  images: silkDeploy ? { unoptimized: true } : undefined,
   webpack: (config) => {
     config.resolve.alias = {
       ...config.resolve.alias,

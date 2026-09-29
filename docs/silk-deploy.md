@@ -2,47 +2,57 @@
 
 NetID **jlhorton**, repo at `~/www-root/relax`.
 
-## URL layout (non-overlapping)
+## Why no Node Unit app?
 
-| App | Unit `uri` | Public URL |
-|-----|------------|------------|
-| Next UI | `/relax` and `/relax/*` | https://jlhorton.w3.uvm.edu/relax/ |
-| FastAPI | `/relax-api*` | https://jlhorton.w3.uvm.edu/relax-api/health |
+NGINX Unit’s Node adapter is **not** a full Node `http.ServerResponse`. Next.js App Router often dies with proxy errors (application process never stays up — you only see a Unit `prototype`).
 
-Do **not** use `uri = /relax*` for the UI — that also matches `/relax-api`.
+So on Silk:
 
-Local/Docker stay on `/api` and no `basePath`. Silk sets `API_ROOT_PATH=/relax-api` and builds the UI with `SILK_DEPLOY=1` (`basePath=/relax`) and `NEXT_PUBLIC_API_URL=/relax-api`.
+| Piece | How |
+|-------|-----|
+| UI | **Static export** → `~/www-root/public/relax/` (URL `/relax/`) |
+| API | **Python Unit** → `uri = /relax-api*` |
 
 ## Install
 
 ```bash
-ssh jlhorton@w3.uvm.edu
 cd ~/www-root/relax
 git pull
-chmod +x deploy/silk/*.sh
+FORCE=1 ./deploy/silk/kill-stale-apps.sh   # clear old Node workers
 ./deploy/silk/install-on-silk.sh
 ```
 
-Manual load:
+Confirm `ps` shows **no** `nodejs` / `server.js` Unit apps — only `relax_api`:
 
 ```bash
-cp deploy/silk/.silk.ini ~/www-root/.silk.ini
-# fix venv-path if needed
-silk site jlhorton.w3.uvm.edu update
-silk app jlhorton.w3.uvm.edu/relax-api load
-silk app jlhorton.w3.uvm.edu/relax load
+ps -u "$USER" -o pid,args | grep -E 'unit:|node|wsgi' | grep -v grep
 ```
 
 ## Smoke
 
 ```bash
 curl -sS -D - --compressed "https://jlhorton.w3.uvm.edu/relax-api/health"
-# Body: {"status":"ok","via":"wsgi"}
-# Header: X-Relax-Backend: wsgi-health
+# expect X-Relax-Backend: wsgi-health
 
-open "https://jlhorton.w3.uvm.edu/relax/calc/"
+# UI
+curl -sS -o /dev/null -w "%{http_code}\n" "https://jlhorton.w3.uvm.edu/relax/"
+# expect 200
 ```
 
-## Stale catch-all `/*` Node app
+## Proxy errors on API
 
-If something still serves a Next 404 on `/relax-api/...`, unload the old root app (`silk app help` for unload/delete) or ask [SAA](mailto:saa@uvm.edu). Confirm `~/www-root/.silk.ini` has no `uri = /*` Node section.
+1. Enable WSGI debug log in `~/www-root/.silk.ini` under `[app: api]`:
+   ```ini
+   env.RELAX_WSGI_DEBUG = /users/j/l/jlhorton/relax-wsgi.log
+   ```
+   Then `silk app jlhorton.w3.uvm.edu/relax-api load` and retry; `cat ~/relax-wsgi.log`.
+
+2. Unit logs:
+   ```bash
+   tail -100 /var/opt/nginx-unit/*/unit.log
+   ```
+
+3. DuckDB must import in the venv (native wheel):
+   ```bash
+   ~/venvs/relax/bin/python -c "import duckdb; print(duckdb.__version__)"
+   ```

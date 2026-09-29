@@ -7,22 +7,24 @@ SITE_ROOT="$(cd "$ROOT/.." && pwd)"
 NETID="${NETID:-jlhorton}"
 VENV="${VENV:-$HOME/venvs/relax}"
 HOST="${NETID}.w3.uvm.edu"
+PUBLIC_RELAX="${SITE_ROOT}/public/relax"
 
-echo "==> Repo:       $ROOT"
-echo "==> Site root:  $SITE_ROOT"
+echo "==> Repo:      $ROOT"
+echo "==> Site root: $SITE_ROOT"
+echo "==> Static UI: $PUBLIC_RELAX"
 
 mkdir -p "$SITE_ROOT/public" "$HOME/venvs"
 
-echo "==> Building Next (basePath=/relax) → deploy/silk/dist/web"
+echo "==> Build static UI"
 "$ROOT/deploy/silk/build-web.sh"
 
-if [[ ! -f "$ROOT/deploy/silk/dist/web/server.js" ]]; then
-  echo "error: missing dist/web/server.js" >&2
-  exit 1
-fi
+echo "==> Publish static UI → $PUBLIC_RELAX"
+rm -rf "$PUBLIC_RELAX"
+mkdir -p "$PUBLIC_RELAX"
+cp -R "$ROOT/deploy/silk/dist/web/." "$PUBLIC_RELAX/"
 
 if [[ ! -d "$VENV" ]]; then
-  echo "==> Creating venv at $VENV"
+  echo "==> Creating venv $VENV"
   python3 -m venv "$VENV"
 fi
 
@@ -30,7 +32,13 @@ echo "==> pip install backend"
 "$VENV/bin/pip" install -U pip
 "$VENV/bin/pip" install "$ROOT/backend"
 
-chmod u+x "$ROOT/backend/wsgi.py" "$ROOT/deploy/silk/dist/web/server.js"
+# Quick duckdb import check (native wheel often breaks → proxy errors)
+if ! "$VENV/bin/python" -c "import duckdb; print('duckdb', duckdb.__version__)"; then
+  echo "error: duckdb failed to import in $VENV — API will crash under Unit" >&2
+  exit 1
+fi
+
+chmod u+x "$ROOT/backend/wsgi.py"
 mkdir -p "$ROOT/backend/data/uploads" "$ROOT/backend/data/user_datasets"
 
 INI_DST="$SITE_ROOT/.silk.ini"
@@ -40,20 +48,27 @@ tmp="$(mktemp)"
 sed "s|^venv-path = .*|venv-path = ${ABS_VENV}|" "$INI_DST" >"$tmp"
 mv "$tmp" "$INI_DST"
 
-echo "==> silk site update + load apps (/relax-api, /relax/*, /relax)"
+echo "==> Kill stale Node Unit workers (Next-on-Unit is unsupported)"
+FORCE=1 "$ROOT/deploy/silk/kill-stale-apps.sh" || true
+
+echo "==> silk site update + load API only"
 silk site "${HOST}" update || true
-silk app "${HOST}/relax-api*" load
-silk app "${HOST}/relax/*" load
+silk app "${HOST}/relax-api" load
 
 cat <<EOF
 
-Done.
+Done. There should be NO nodejs Unit app — only relax_api.
 
-  UI:  https://${HOST}/relax/
-  API: https://${HOST}/relax-api/health
+  UI (static):  https://${HOST}/relax/
+  API:          https://${HOST}/relax-api/health
 
 curl -sS -D - --compressed "https://${HOST}/relax-api/health"
-# expect X-Relax-Backend: wsgi-health
 
-If an old catch-all /* Node app still wins, unload it (see silk app help) or ask SAA.
+If API still proxy-errors, check Unit logs and PATH_INFO:
+  ls /var/opt/nginx-unit/*/unit.log /usr/lib/unit-user-*/unit.log 2>/dev/null
+  tail -80 /var/opt/nginx-unit/*/unit.log 2>/dev/null
+
+Unload old Node apps if they still appear in 'ps':
+  silk app help
+  # or kill node PIDs again after confirming .silk.ini has no type=nodejs
 EOF

@@ -1,14 +1,15 @@
-# Silk packaging (jlhorton)
+# Silk (jlhorton)
 
-| URL | App |
-|-----|-----|
-| `/relax/` | Next (Unit nodejs, `basePath=/relax`) |
-| `/relax-api/` | FastAPI (Unit python) |
+| URL | Mechanism |
+|-----|-----------|
+| `/relax/` | Static Next export in `~/www-root/public/relax/` |
+| `/relax-api/` | Python Unit app only |
 
-`/relax/*` and `/relax-api*` do not overlap (unlike `/relax*` vs `/relax-api`).
+**Do not** run Next under Unit — proxy errors / stuck `prototype` process.
 
 ```bash
+FORCE=1 ./deploy/silk/kill-stale-apps.sh
 ./deploy/silk/install-on-silk.sh
 ```
 
-See [docs/silk-deploy.md](../../docs/silk-deploy.md).
+Details: [docs/silk-deploy.md](../../docs/silk-deploy.md)
