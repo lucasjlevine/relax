@@ -114,7 +114,7 @@ export const QueryEditor = forwardRef<QueryEditorHandle, Props>(
     );
 
     return (
-      <div className="overflow-hidden rounded-md border bg-card">
+      <div className="overflow-y-auto rounded-md border bg-card">
         {language === "relalg" ? (
           <div className="flex items-center justify-between gap-2 border-b bg-muted/40 px-3 py-1.5">
             <span
@@ -128,7 +128,7 @@ export const QueryEditor = forwardRef<QueryEditorHandle, Props>(
         <CodeMirror
           ref={cmRef}
           value={value}
-          height="220px"
+          height="100%"
           basicSetup={{ lineNumbers: true, foldGutter: false }}
           extensions={extensions}
           onChange={onChange}
