@@ -53,8 +53,8 @@ if grep -q '^venv-path' "$INI_DST"; then
   mv "$tmp" "$INI_DST"
 fi
 
-echo "==> silk update + load apps"
-silk update || true
+echo "==> silk site update + load apps"
+silk site "${NETID}.w3.uvm.edu" update || true
 silk app "${NETID}.w3.uvm.edu/api" load
 silk app "${NETID}.w3.uvm.edu" load
 

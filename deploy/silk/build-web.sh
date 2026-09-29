@@ -7,14 +7,16 @@ FRONTEND="$ROOT/frontend"
 OUT="$ROOT/deploy/silk/dist/web"
 
 # Same-origin: browser calls /api/* on the Silk hostname (Unit routes to FastAPI).
+# Do NOT set NODE_ENV=production before npm ci — that skips devDependencies
+# (typescript, eslint, etc.) and can break the Next production build.
 export NEXT_PUBLIC_API_URL="${NEXT_PUBLIC_API_URL:-}"
-export NODE_ENV=production
 
 echo "==> Installing frontend deps"
 cd "$FRONTEND"
 npm ci
 
 echo "==> Building Next.js (standalone), NEXT_PUBLIC_API_URL='${NEXT_PUBLIC_API_URL}'"
+# next build sets NODE_ENV=production itself
 npm run build
 
 if [[ ! -f "$FRONTEND/.next/standalone/server.js" ]]; then

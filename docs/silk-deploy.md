@@ -59,7 +59,7 @@ That script:
 1. Runs `build-web.sh` → `deploy/silk/dist/web`
 2. Creates `~/venvs/relax` and `pip install`s `backend/`
 3. Copies `.silk.ini` to `~/www-root/.silk.ini` (rewrites `venv-path` to the absolute path)
-4. Runs `silk update` and loads `/api` + `/*`
+4. Runs `silk site jlhorton.w3.uvm.edu update` and loads `/api` + `/*`
 
 Manual equivalent:
 
@@ -72,7 +72,7 @@ chmod u+x backend/wsgi.py deploy/silk/dist/web/server.js
 mkdir -p ~/www-root/public backend/data/uploads backend/data/user_datasets
 cp deploy/silk/.silk.ini ~/www-root/.silk.ini
 # confirm venv-path = output of: readlink -f ~/venvs/relax
-silk update
+silk site jlhorton.w3.uvm.edu update
 silk app jlhorton.w3.uvm.edu/api load
 silk app jlhorton.w3.uvm.edu load
 ```
@@ -100,7 +100,7 @@ If you build on a laptop instead of on Silk:
 |--------|--------|
 | Frontend | `./deploy/silk/build-web.sh` then `silk app jlhorton.w3.uvm.edu load` |
 | Backend Python | `~/venvs/relax/bin/pip install ~/www-root/relax/backend` then `silk app jlhorton.w3.uvm.edu/api load` |
-| `.silk.ini` | Edit `~/www-root/.silk.ini`, `silk update`, reload apps |
+| `.silk.ini` | Edit `~/www-root/.silk.ini`, `silk site jlhorton.w3.uvm.edu update`, reload apps |
 
 ## Checklist
 

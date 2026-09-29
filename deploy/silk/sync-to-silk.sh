@@ -72,7 +72,7 @@ Sync done.
 On Silk (${REMOTE}):
   1. Create venv (once):  python3 -m venv ~/venvs/relax && ~/venvs/relax/bin/pip install '${REMOTE_ROOT}/api'
   2. Edit ${REMOTE_ROOT}/.silk.ini  (NETID, venv-path, CORS_ORIGINS)
-  3. silk update
+  3. silk site ${NETID}.w3.uvm.edu update
   4. silk app ${NETID}.w3.uvm.edu/api load
   5. silk app ${NETID}.w3.uvm.edu load
   6. Open https://${NETID}.w3.uvm.edu/calc

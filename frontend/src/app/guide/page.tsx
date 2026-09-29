@@ -345,7 +345,7 @@ SELECT * FROM Sales`}</Pre>
                 Operator toolbar inserts unicode symbols at the cursor
               </li>
               <li>
-                Comments: <Code>-- line</Code> and <Code>/* block */</Code>
+                Comments: <Code>-- line</Code> and <Code>{"/* block */"}</Code>
               </li>
             </ul>
           </Section>
