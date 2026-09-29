@@ -9,7 +9,7 @@ OUT="$ROOT/deploy/silk/dist/web"
 # Same-origin /api/* (Next proxies to systemd uvicorn)
 export NEXT_PUBLIC_API_URL="${NEXT_PUBLIC_API_URL:-/api}"
 export SILK_DEPLOY=1
-export RELAX_API_UPSTREAM="${RELAX_API_UPSTREAM:-http://127.0.0.1:18765}"
+export RELAX_API_UPSTREAM="${RELAX_API_UPSTREAM:-http://127.0.0.1:8000}"
 
 echo "==> Installing frontend deps"
 cd "$FRONTEND"

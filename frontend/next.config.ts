@@ -7,7 +7,7 @@ import path from "path";
  */
 const silkDeploy = process.env.SILK_DEPLOY === "1";
 const apiUpstream =
-  process.env.RELAX_API_UPSTREAM || "http://127.0.0.1:18765";
+  process.env.RELAX_API_UPSTREAM || "http://127.0.0.1:8000";
 
 const nextConfig: NextConfig = {
   output: "standalone",

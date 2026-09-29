@@ -1,5 +1,5 @@
 [Unit]
-Description=relax FastAPI (localhost only)
+Description=relax FastAPI (localhost :8000)
 After=network.target
 
 [Service]
@@ -9,8 +9,8 @@ Environment=DATASETS_PATH=data/local_groups
 Environment=UPLOAD_DIR=data/uploads
 Environment=USER_DATASETS_DIR=data/user_datasets
 Environment=API_ROOT_PATH=/api
-Environment=CORS_ORIGINS=["https://jlhorton.w3.uvm.edu","http://127.0.0.1:18765"]
-ExecStart=%h/venvs/relax/bin/uvicorn app.main:app --host 127.0.0.1 --port 18765 --proxy-headers
+Environment=CORS_ORIGINS=["https://jlhorton.w3.uvm.edu"]
+ExecStart=%h/venvs/relax/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --proxy-headers
 Restart=on-failure
 RestartSec=3
 

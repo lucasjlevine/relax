@@ -7,7 +7,7 @@ NetID **jlhorton**, repo at `~/www-root/relax`.
 | Piece | How it runs |
 |-------|-------------|
 | Next.js UI | Silk Unit Node app (`uri = /*`) |
-| FastAPI | `systemd --user` on `127.0.0.1:18765` |
+| FastAPI | `systemd --user` on `127.0.0.1:8000` |
 | Browser `/api/*` | Next **rewrites** → localhost uvicorn |
 
 No Python Unit / WSGI. No `/relax-api` path split.
@@ -16,7 +16,7 @@ No Python Unit / WSGI. No `/relax-api` path split.
 Browser → https://jlhorton.w3.uvm.edu/calc
                 → Unit [Node] → Next.js
 Browser → https://jlhorton.w3.uvm.edu/api/...
-                → Unit [Node] → Next rewrite → 127.0.0.1:18765
+                → Unit [Node] → Next rewrite → 127.0.0.1:8000
 ```
 
 ## Install
@@ -46,7 +46,7 @@ loginctl enable-linger jlhorton
 ## Smoke
 
 ```bash
-curl -sS http://127.0.0.1:18765/api/health
+curl -sS http://127.0.0.1:8000/api/health
 curl -sS -D - --compressed "https://jlhorton.w3.uvm.edu/api/health"
 open "https://jlhorton.w3.uvm.edu/calc"
 ```

@@ -1,7 +1,7 @@
 # Silk (jlhorton)
 
 - **Next** → Unit Node at `/*`
-- **FastAPI** → `systemd --user` on `127.0.0.1:18765`
+- **FastAPI** → `systemd --user` on `127.0.0.1:8000`
 - Browser `/api/*` → Next rewrite → localhost
 
 ```bash
