@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start relax (backend + frontend) on macOS / Linux.
+# Start Relational Playground (backend + frontend) on macOS / Linux.
 # Usage:
 #   ./start.sh           # install deps if needed, run locally
 #   ./start.sh --docker  # build & run with Docker Compose
@@ -148,7 +148,7 @@ FRONTEND_PID=$!
 
 cat <<EOF
 
-relax is starting.
+Relational Playground is starting.
 
   App:      http://localhost:3000
   Calc:     http://localhost:3000/calc

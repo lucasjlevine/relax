@@ -1,4 +1,4 @@
-# Deploying relax on UVM Silk
+# Deploying Relational Playground on UVM Silk
 
 NetID **jlhorton**, repo at `~/www-root/relax`.
 

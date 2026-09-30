@@ -2,7 +2,8 @@
 
 ## Overview
 
-relax is a monorepo teaching tool for Relational Algebra (RelAlg) and SQL.
+Relational Playground is a monorepo teaching tool for Relational Algebra (RelAlg) and SQL.
+Inspired by [RelaX](https://dbis-uibk.github.io/relax/landing); separate project, not affiliated.
 
 ```
 Browser (Next.js)

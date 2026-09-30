@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run ON Silk (SSH). Find and kill Node workers for this account's relax apps.
+# Run ON Silk (SSH). Find and kill Node workers for this account's apps.
 # Unit may respawn them — kill, then reload apps from .silk.ini.
 set -euo pipefail
 
@@ -8,18 +8,18 @@ FORCE="${FORCE:-0}"
 
 echo "==> User: $NETID (uid=$(id -u))"
 echo
-echo "==> Your processes (node / server.js / unit / wsgi / relax):"
+echo "==> Your processes (node / server.js / unit / relax):"
 ps -u "$NETID" -o pid,ppid,stat,etime,args 2>/dev/null \
-  | grep -Eine 'node|server\.js|nginx-unit|unit:|wsgi|relax/deploy|relax/backend' \
+  | grep -Eine 'node|server\.js|nginx-unit|unit:|relax/deploy|relax/backend|uvicorn' \
   | grep -viE 'grep|kill-stale' || echo "(none matched)"
 
 echo
 echo "==> pgrep:"
-pgrep -afu "$NETID" 'node|server\.js|wsgi' 2>/dev/null || echo "(none)"
+pgrep -afu "$NETID" 'node|server\.js|uvicorn' 2>/dev/null || echo "(none)"
 
 echo
 if [[ "$FORCE" != "1" ]]; then
-  printf "Kill matching relax/node PIDs? Type yes: "
+  printf "Kill matching Node PIDs? Type yes: "
   read -r ans
   if [[ "$ans" != "yes" ]]; then
     echo "Aborted. Manual: kill <PID>  or  kill -9 <PID>"
@@ -30,7 +30,6 @@ fi
 PIDS=""
 for pat in \
   'relax/deploy/silk/dist/web/server\.js' \
-  'relax/backend/wsgi\.py' \
   'node.*server\.js'
 do
   PIDS="$PIDS $(pgrep -u "$NETID" -f "$pat" 2>/dev/null || true)"
@@ -67,15 +66,16 @@ if [[ -n "${LEFT}" ]]; then
 fi
 
 echo "==> Still running:"
-pgrep -afu "$NETID" 'node|server\.js|wsgi' 2>/dev/null || echo "(none)"
+pgrep -afu "$NETID" 'node|server\.js|uvicorn' 2>/dev/null || echo "(none)"
 
 cat <<EOF
 
-Reload apps (or Unit may spawn workers again from old config):
+Reload the Unit Node app (or Unit may spawn workers again from old config):
   cp ~/www-root/relax/deploy/silk/.silk.ini ~/www-root/.silk.ini
   silk site ${NETID}.w3.uvm.edu update
-  silk app ${NETID}.w3.uvm.edu/relax-api load
-  silk app ${NETID}.w3.uvm.edu/relax load
+  silk app ${NETID}.w3.uvm.edu load
+
+API is systemd (not Unit): systemctl --user restart relax-api
 
 Non-interactive kill:  FORCE=1 ./deploy/silk/kill-stale-apps.sh
 EOF

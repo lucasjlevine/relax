@@ -445,6 +445,3 @@ def format_group_text(group: GroupDef) -> str:
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 
-
-def parse_and_preview(text: str) -> list[GroupDef]:
-    return parse_local_groups(text, materialize=True)

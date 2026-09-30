@@ -1,6 +1,6 @@
 # User guide
 
-Things to know when using **relax** as a RelAlg / SQL learning calculator.
+Things to know when using **Relational Playground** as a RelAlg / SQL learning calculator.
 
 ## Modes
 

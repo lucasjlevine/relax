@@ -403,23 +403,6 @@ export async function deleteRelationRow(
   );
 }
 
-export async function setRelationRows(
-  datasetId: string,
-  relationName: string,
-  rows: unknown[][],
-): Promise<DatasetDetail> {
-  return handle<DatasetDetail>(
-    await apiFetch(
-      `${API_BASE}/datasets/${datasetId}/relations/${encodeURIComponent(relationName)}/rows`,
-      {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rows }),
-      },
-    ),
-  );
-}
-
 export async function runQuery(input: {
   datasetId: string;
   language: QueryLanguage;

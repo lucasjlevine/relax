@@ -1,4 +1,4 @@
-# relax backend
+# Relational Playground — backend
 
 FastAPI service that parses RelAlg (Lark) and SQL (sqlglot), then executes against DuckDB.
 

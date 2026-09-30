@@ -503,8 +503,11 @@ export function CalculatorApp() {
           >
             <PanelLeft className="h-4 w-4" />
           </Button>
-          <Link href="/" className="font-serif text-xl tracking-tight text-primary">
-            relax
+          <Link
+            href="/"
+            className="font-serif text-base tracking-tight text-primary sm:text-lg"
+          >
+            Relational Playground
           </Link>
           <Separator orientation="vertical" className="hidden h-5 sm:block" />
           <span className="hidden text-sm text-muted-foreground sm:inline">Calculator</span>

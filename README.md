@@ -1,8 +1,10 @@
-# relax
+# Relational Playground
 
-A web-based **Relational Algebra** and **SQL** learning calculator inspired by [RelaX](https://dbis-uibk.github.io/relax/landing).
+A web-based **Relational Algebra** and **SQL** learning calculator.
 
-Write RelAlg or SQL against teaching datasets, execute instantly, inspect a result table and operator tree, manage or upload data, and export CSV.
+Inspired by [RelaX](https://dbis-uibk.github.io/relax/landing) (University of Innsbruck DBIS). Separate project; not affiliated with RelaX.
+
+Write RelAlg or SQL against teaching datasets, execute, inspect a result table and operator tree, manage or upload data, and export CSV.
 
 ## Quickstart
 
@@ -83,7 +85,7 @@ docker compose up --build
 | **Manage** | Rename/delete datasets, relations, and columns; edit rows; add another relation (or CSV) into the same dataset; drag the left panel wider |
 | **Export** | Download the current result as CSV |
 | **Persistence** | Last dataset + query restored on reload; **History** reuses past executions |
-| **Scope** | RelAlg + SQL only — not BagAlg / TRC / GE |
+| **Scope** | RelAlg + SQL only — not BagAlg / TRC (Group Editor is in scope) |
 
 Full walkthrough: **[docs/user-guide.md](docs/user-guide.md)**
 
@@ -121,7 +123,7 @@ WHERE dept = 'Engineering'
 ## Project layout
 
 ```
-relax/
+relax/            # repo directory (product name: Relational Playground)
 ├── start.sh      # macOS / Linux one-command start
 ├── start.ps1     # Windows one-command start
 ├── frontend/     # Next.js UI (landing, /calc, /guide)
@@ -129,6 +131,10 @@ relax/
 ├── docs/         # User guide, syntax, API, architecture
 └── .cursor/rules/
 ```
+
+## Inspiration
+
+[RelaX](https://dbis-uibk.github.io/relax/landing) — https://dbis-uibk.github.io/relax/landing
 
 ## Documentation
 

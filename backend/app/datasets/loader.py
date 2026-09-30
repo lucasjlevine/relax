@@ -102,36 +102,6 @@ def _split_csv_line(line: str) -> list[str]:
     return parts
 
 
-def _parse_header(header_line: str) -> list[ColumnDef]:
-    cols: list[ColumnDef] = []
-    for part in _split_csv_line(header_line):
-        if ":" in part:
-            name, typ = part.split(":", 1)
-            cols.append(ColumnDef(name=name.strip(), type_name=typ.strip().lower()))
-        else:
-            cols.append(ColumnDef(name=part.strip(), type_name="string"))
-    return cols
-
-
-def _parse_relation_body(body: str) -> tuple[list[ColumnDef], list[list[Any]]]:
-    lines = [ln.strip() for ln in body.strip().splitlines() if ln.strip()]
-    if not lines:
-        raise DatasetError("Empty relation body")
-    columns = _parse_header(lines[0])
-    rows: list[list[Any]] = []
-    for line in lines[1:]:
-        cells = _split_csv_line(line)
-        if len(cells) != len(columns):
-            raise DatasetError(
-                f"Row has {len(cells)} values but header has {len(columns)} columns: {line}"
-            )
-        row = [
-            _parse_literal(cell, columns[i].type_name) for i, cell in enumerate(cells)
-        ]
-        rows.append(row)
-    return columns, rows
-
-
 def parse_local_groups(text: str) -> list[GroupDef]:
     """Parse RelaX-compatible local_groups text into GroupDef objects."""
     from app.datasets.group_format import parse_local_groups as _parse

@@ -3,9 +3,9 @@ import type { Metadata } from "next";
 import { Button } from "@/components/ui/button";
 
 export const metadata: Metadata = {
-  title: "Guide — relax",
+  title: "Guide — Relational Playground",
   description:
-    "How to use the relax RelAlg and SQL calculator: syntax, assignments, helpers, shortcuts, and datasets.",
+    "How to use the Relational Playground RelAlg and SQL calculator: syntax, assignments, helpers, shortcuts, and datasets.",
 };
 
 const TOC = [
@@ -17,6 +17,7 @@ const TOC = [
   { id: "editor", label: "Editor & shortcuts" },
   { id: "data", label: "Datasets" },
   { id: "results", label: "Results" },
+  { id: "inspiration", label: "Inspiration" },
 ] as const;
 
 function Code({ children }: { children: React.ReactNode }) {
@@ -62,9 +63,9 @@ export default function GuidePage() {
           <div className="flex items-center gap-3">
             <Link
               href="/"
-              className="font-[family-name:var(--font-display)] text-xl tracking-tight text-primary"
+              className="font-[family-name:var(--font-display)] text-lg tracking-tight text-primary sm:text-xl"
             >
-              relax
+              Relational Playground
             </Link>
             <span className="text-sm text-muted-foreground">Guide</span>
           </div>
@@ -97,8 +98,8 @@ export default function GuidePage() {
             Calculator guide
           </h1>
           <p className="mt-3 max-w-2xl text-lg text-muted-foreground">
-            How to write RelAlg and SQL in relax, use helpers and assignments, and
-            work with teaching datasets.
+            How to write RelAlg and SQL here: helpers, assignments, shortcuts, and
+            teaching datasets.
           </p>
 
           <Section id="start" title="Getting started">
@@ -397,6 +398,33 @@ SELECT * FROM Sales`}</Pre>
             <p>
               Scope is RelAlg + SQL only — no BagAlg or TRC. Intermediate-node result
               drill-down is not available yet.
+            </p>
+          </Section>
+
+          <Section id="inspiration" title="Inspiration">
+            <p>
+              Relational Playground is inspired by{" "}
+              <a
+                href="https://dbis-uibk.github.io/relax/landing"
+                className="text-primary underline-offset-2 hover:underline"
+                rel="noopener noreferrer"
+                target="_blank"
+              >
+                RelaX
+              </a>{" "}
+              (University of Innsbruck DBIS). RelAlg syntax and the Group Editor{" "}
+              <Code>local_groups</Code> format follow RelaX conventions where noted.
+              This site is a separate project and is not affiliated with RelaX.
+            </p>
+            <p className="text-sm">
+              <a
+                href="https://dbis-uibk.github.io/relax/landing"
+                className="font-mono text-xs text-foreground/80 underline-offset-2 hover:underline"
+                rel="noopener noreferrer"
+                target="_blank"
+              >
+                https://dbis-uibk.github.io/relax/landing
+              </a>
             </p>
             <div className="flex flex-wrap gap-3 pt-4">
               <Button asChild>

@@ -25,8 +25,8 @@ export default function HomePage() {
       />
 
       <header className="relative z-10 mx-auto flex w-full max-w-5xl items-center justify-between px-6 py-6">
-        <span className="font-[family-name:var(--font-display)] text-2xl tracking-tight text-primary">
-          relax
+        <span className="font-[family-name:var(--font-display)] text-xl tracking-tight text-primary sm:text-2xl">
+          Relational Playground
         </span>
         <nav className="flex items-center gap-4">
           <Link
@@ -49,12 +49,13 @@ export default function HomePage() {
 
       <main className="relative z-10">
         <section className="mx-auto flex min-h-[72vh] w-full max-w-5xl flex-col justify-center px-6 pb-16 pt-6">
-          <h1 className="font-[family-name:var(--font-display)] text-5xl leading-[1.05] tracking-tight text-foreground md:text-7xl">
-            relax
+          <h1 className="font-[family-name:var(--font-display)] text-4xl leading-[1.05] tracking-tight text-foreground sm:text-5xl md:text-6xl">
+            Relational Playground
           </h1>
           <p className="mt-5 max-w-lg text-lg text-muted-foreground md:text-xl">
-            A browser calculator for relational algebra and SQL — write queries,
-            run them on teaching data, and see the result table plus operator tree.
+            A browser calculator for relational algebra and SQL. Write a query,
+            run it on teaching data, and inspect the result table and operator
+            tree.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Button asChild size="lg">
@@ -77,12 +78,12 @@ export default function HomePage() {
         >
           <div className="mx-auto w-full max-w-5xl px-6">
             <h2 className="font-[family-name:var(--font-display)] text-3xl tracking-tight text-foreground">
-              What this site is
+              About
             </h2>
             <p className="mt-3 max-w-2xl text-muted-foreground">
-              relax is a learning tool in the spirit of RelaX: type RelAlg with classical
-              subscripts (or plaintext keywords), or switch to SQL. Queries run against
-              small built-in datasets — or ones you upload or build yourself.
+              Type RelAlg with classical subscripts or plaintext keywords, or
+              switch to SQL. Queries run against small built-in datasets, or ones
+              you upload or build.
             </p>
 
             <div className="mt-12 grid gap-10 md:grid-cols-2">
@@ -124,6 +125,36 @@ export default function HomePage() {
                   ))}
                 </ul>
               </div>
+            </div>
+
+            <div className="mt-14 border-t border-primary/10 pt-10">
+              <h3 className="text-lg font-medium text-foreground">Inspiration</h3>
+              <p className="mt-3 max-w-2xl text-muted-foreground">
+                Inspired by{" "}
+                <a
+                  href="https://dbis-uibk.github.io/relax/landing"
+                  className="font-medium text-foreground/80 underline-offset-2 hover:underline"
+                  rel="noopener noreferrer"
+                  target="_blank"
+                >
+                  RelaX
+                </a>
+                , the relational algebra calculator from the Databases and
+                Information Systems group at the University of Innsbruck. This
+                project is a separate RelAlg + SQL learning tool; it is not
+                affiliated with RelaX.
+              </p>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Citation:{" "}
+                <a
+                  href="https://dbis-uibk.github.io/relax/landing"
+                  className="font-mono text-xs text-foreground/80 underline-offset-2 hover:underline"
+                  rel="noopener noreferrer"
+                  target="_blank"
+                >
+                  https://dbis-uibk.github.io/relax/landing
+                </a>
+              </p>
             </div>
 
             <div className="mt-14 flex flex-wrap items-center gap-4 border-t border-primary/10 pt-10">

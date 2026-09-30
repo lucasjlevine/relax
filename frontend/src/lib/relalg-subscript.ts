@@ -421,5 +421,3 @@ export function createRelalgSubscriptExtension(
     }),
   ];
 }
-
-export const relalgSubscriptExtension = createRelalgSubscriptExtension();

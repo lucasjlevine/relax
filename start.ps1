@@ -1,4 +1,4 @@
-# Start relax (backend + frontend) on Windows.
+# Start Relational Playground (backend + frontend) on Windows.
 # Usage (from PowerShell in the repo root):
 #   .\start.ps1           # install deps if needed, run locally
 #   .\start.ps1 -Docker   # build & run with Docker Compose
@@ -182,7 +182,7 @@ $frontend = Start-Process -FilePath "cmd.exe" `
     -NoNewWindow
 
 Write-Host ""
-Write-Host "relax is starting."
+Write-Host "Relational Playground is starting."
 Write-Host ""
 Write-Host "  App:      http://localhost:3000"
 Write-Host "  Calc:     http://localhost:3000/calc"

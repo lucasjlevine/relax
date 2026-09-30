@@ -61,7 +61,7 @@ function ResultBlockView({ block, multi, expanded, onToggle }: BlockProps) {
             variant="outline"
             className="h-7 gap-1.5"
             onClick={() =>
-              downloadCsv("relax-results.csv", resultsToCsv(toCsvPayload(block)))
+              downloadCsv("playground-results.csv", resultsToCsv(toCsvPayload(block)))
             }
           >
             <Download className="h-3.5 w-3.5" aria-hidden />
@@ -116,7 +116,7 @@ function ResultBlockView({ block, multi, expanded, onToggle }: BlockProps) {
             className="mr-1 h-7 shrink-0 gap-1.5"
             onClick={() =>
               downloadCsv(
-                `relax-results-${block.index + 1}.csv`,
+                `playground-results-${block.index + 1}.csv`,
                 resultsToCsv(toCsvPayload(block)),
               )
             }
