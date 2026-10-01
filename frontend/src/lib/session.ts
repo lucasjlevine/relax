@@ -1,7 +1,8 @@
 export type CalcSession = {
   datasetId: string | null;
   language: "relalg" | "sql";
-  query: string;
+  queryRelAlg: string;
+  querySql: string;
 };
 
 export type HistoryEntry = {
@@ -13,17 +14,48 @@ export type HistoryEntry = {
   at: number;
 };
 
+type LegacyCalcSession = {
+  datasetId?: string | null;
+  language?: "relalg" | "sql";
+  query?: string;
+  queryRelAlg?: string;
+  querySql?: string;
+};
+
 const SESSION_KEY = "relax.calcSession";
 const HISTORY_KEY = "relax.queryHistory";
 const HISTORY_MAX = 40;
+
+function normalizeSession(parsed: LegacyCalcSession): CalcSession | null {
+  const language = parsed.language === "sql" ? "sql" : "relalg";
+  if (
+    typeof parsed.queryRelAlg === "string" &&
+    typeof parsed.querySql === "string"
+  ) {
+    return {
+      datasetId: parsed.datasetId ?? null,
+      language,
+      queryRelAlg: parsed.queryRelAlg,
+      querySql: parsed.querySql,
+    };
+  }
+  // Migrate older sessions that stored a single active query.
+  if (typeof parsed.query === "string") {
+    return {
+      datasetId: parsed.datasetId ?? null,
+      language,
+      queryRelAlg: language === "relalg" ? parsed.query : "",
+      querySql: language === "sql" ? parsed.query : "",
+    };
+  }
+  return null;
+}
 
 export function loadSession(): CalcSession | null {
   try {
     const raw = localStorage.getItem(SESSION_KEY);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as CalcSession;
-    if (typeof parsed.query !== "string") return null;
-    return parsed;
+    return normalizeSession(JSON.parse(raw) as LegacyCalcSession);
   } catch {
     return null;
   }

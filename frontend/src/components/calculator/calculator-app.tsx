@@ -186,13 +186,22 @@ function FormatDropdown({
 
 export function CalculatorApp() {
   const editorRef = useRef<QueryEditorHandle>(null);
-  const languageRef = useRef<QueryLanguage>("relalg");
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const skipNextExample = useRef(false);
   const [datasets, setDatasets] = useState<DatasetSummary[]>([]);
   const [dataset, setDataset] = useState<DatasetDetail | null>(null);
   const [language, setLanguage] = useState<QueryLanguage>("relalg");
-  const [query, setQuery] = useState("");
+  const [queryRelAlg, setQueryRelAlg] = useState("");
+  const [querySql, setQuerySql] = useState("");
+  const query = language === "sql" ? querySql : queryRelAlg;
+  const setQuery = (value: string) => {
+    if (language === "sql") setQuerySql(value);
+    else setQueryRelAlg(value);
+  };
+  const setQueryFor = (lang: QueryLanguage, value: string) => {
+    if (lang === "sql") setQuerySql(value);
+    else setQueryRelAlg(value);
+  };
   const [result, setResult] = useState<QueryResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [errorHeading, setErrorHeading] = useState("Couldn’t run query");
@@ -213,8 +222,6 @@ export function CalculatorApp() {
   const historyBtnRef = useRef<HTMLButtonElement>(null);
   const formatBtnRef = useRef<HTMLButtonElement>(null);
   const booted = useRef(false);
-
-  languageRef.current = language;
 
   useEffect(() => {
     setHistory(loadHistory());
@@ -252,20 +259,15 @@ export function CalculatorApp() {
     saveSession({
       datasetId: dataset?.id ?? null,
       language,
-      query,
+      queryRelAlg,
+      querySql,
     });
-  }, [dataset?.id, language, query]);
+  }, [dataset?.id, language, queryRelAlg, querySql]);
 
-  const applyExample = useCallback(
-    (detail: DatasetDetail, lang: QueryLanguage) => {
-      if (lang === "sql" && detail.exampleSql) {
-        setQuery(detail.exampleSql.trim());
-      } else if (detail.exampleRelAlg) {
-        setQuery(detail.exampleRelAlg.trim());
-      }
-    },
-    [],
-  );
+  const applyExamples = useCallback((detail: DatasetDetail) => {
+    setQueryRelAlg(detail.exampleRelAlg?.trim() ?? "");
+    setQuerySql(detail.exampleSql?.trim() ?? "");
+  }, []);
 
   const loadDataset = useCallback(
     async (id: string, opts?: { keepQuery?: boolean }) => {
@@ -277,9 +279,9 @@ export function CalculatorApp() {
         skipNextExample.current = false;
         return;
       }
-      applyExample(detail, languageRef.current);
+      applyExamples(detail);
     },
-    [applyExample],
+    [applyExamples],
   );
 
   const refreshDatasets = useCallback(
@@ -295,10 +297,13 @@ export function CalculatorApp() {
       if (!booted.current && session) {
         if (session.language === "relalg" || session.language === "sql") {
           setLanguage(session.language);
-          languageRef.current = session.language;
         }
-        if (session.query.trim()) {
-          setQuery(session.query);
+        const hasDraft =
+          session.queryRelAlg.trim().length > 0 ||
+          session.querySql.trim().length > 0;
+        if (hasDraft) {
+          setQueryRelAlg(session.queryRelAlg);
+          setQuerySql(session.querySql);
           skipNextExample.current = true;
         }
       }
@@ -307,7 +312,8 @@ export function CalculatorApp() {
         await loadDataset(id, { keepQuery: skipNextExample.current });
       } else {
         setDataset(null);
-        setQuery("");
+        setQueryRelAlg("");
+        setQuerySql("");
         setResult(null);
       }
     },
@@ -354,10 +360,7 @@ export function CalculatorApp() {
   }, []);
 
   const onLanguageChange = (value: string) => {
-    const next = value as QueryLanguage;
-    setLanguage(next);
-    if (!dataset) return;
-    applyExample(dataset, next);
+    setLanguage(value as QueryLanguage);
   };
 
   const execute = async () => {
@@ -573,10 +576,15 @@ export function CalculatorApp() {
                 setResult(null);
                 setError(null);
                 setForkNotice(null);
+                applyExamples(detail);
                 const first = detail.relations[0]?.name;
-                if (first) {
+                if (!detail.exampleRelAlg && first) {
                   setLanguage("relalg");
-                  setQuery(`π_{*}(${first})`);
+                  setQueryFor("relalg", `π_{*}(${first})`);
+                } else if (detail.exampleRelAlg) {
+                  setLanguage("relalg");
+                } else if (detail.exampleSql) {
+                  setLanguage("sql");
                 }
               }}
               onDatasetUpdated={onDatasetUpdated}
@@ -588,7 +596,8 @@ export function CalculatorApp() {
                     await loadDataset(remaining[0].id);
                   } else {
                     setDataset(null);
-                    setQuery("");
+                    setQueryRelAlg("");
+                    setQuerySql("");
                     setResult(null);
                   }
                 }
@@ -602,17 +611,16 @@ export function CalculatorApp() {
                 setResult(null);
                 setError(null);
                 setForkNotice(null);
+                applyExamples(last);
                 if (last.exampleRelAlg) {
                   setLanguage("relalg");
-                  setQuery(last.exampleRelAlg.trim());
                 } else if (last.exampleSql) {
                   setLanguage("sql");
-                  setQuery(last.exampleSql.trim());
                 } else {
                   const first = last.relations[0]?.name;
                   if (first) {
                     setLanguage("relalg");
-                    setQuery(`π_{*}(${first})`);
+                    setQueryFor("relalg", `π_{*}(${first})`);
                   }
                 }
               }}
@@ -663,14 +671,14 @@ export function CalculatorApp() {
                       const url = new URL(window.location.href);
                       url.searchParams.delete("share");
                       window.history.replaceState({}, "", url.pathname);
+                      applyExamples(copied);
                       if (copied.exampleRelAlg) {
                         setLanguage("relalg");
-                        setQuery(copied.exampleRelAlg.trim());
                       } else {
                         const first = copied.relations[0]?.name;
                         if (first) {
                           setLanguage("relalg");
-                          setQuery(`π_{*}(${first})`);
+                          setQueryFor("relalg", `π_{*}(${first})`);
                         }
                       }
                     } catch (err) {
@@ -728,8 +736,7 @@ export function CalculatorApp() {
                     onClose={() => setHistoryOpen(false)}
                     onPick={(h) => {
                       setLanguage(h.language);
-                      languageRef.current = h.language;
-                      setQuery(h.query);
+                      setQueryFor(h.language, h.query);
                       setHistoryOpen(false);
                       if (h.datasetId !== dataset?.id) {
                         skipNextExample.current = true;
