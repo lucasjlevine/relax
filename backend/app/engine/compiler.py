@@ -326,12 +326,18 @@ def _sql_func(node: ra.FuncCall) -> str:
             raise CompileError("coalesce() needs at least one argument")
         return "COALESCE(" + ", ".join(_sql_expr(x) for x in args) + ")"
 
-    # Pass-through aggregates / unknown SQL-like names
-    rendered_args = ", ".join(
-        "*" if isinstance(x, ra.ColumnRef) and x.name == "*" else _sql_expr(x)
-        for x in args
+    # Aggregates used by γ (allowlisted only — no DuckDB builtin pass-through)
+    if name in ("count", "sum", "avg", "min", "max"):
+        rendered_args = ", ".join(
+            "*" if isinstance(x, ra.ColumnRef) and x.name == "*" else _sql_expr(x)
+            for x in args
+        )
+        return f"{name.upper()}({rendered_args})"
+
+    raise CompileError(
+        f"Unknown or unsupported function “{node.name}”. "
+        "See the Functions panel for helpers available in RelAlg."
     )
-    return f"{name.upper()}({rendered_args})"
 
 
 def _unqualify_columns(node: object) -> object:

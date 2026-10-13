@@ -16,9 +16,9 @@ Switching modes loads that dataset’s example query (when present).
 - Classical subscripts: `π_{name}(σ_{dept = 'Engineering'}(Employee))`
 - Prefix / RelaX style: `pi name (sigma dept = 'Engineering' (Employee))`
 - **Assignments:** `A = π_{…}(R)` then reuse `A` (last assignment is the result if there is no trailing expression)
-- **Format** — **Pretty** (indented classical subscripts) or **Dense** (compact, fewer parentheses)
-- Toolbar inserts common operators; the cursor badge shows line:column and whether you are in π/σ/… subscripts (or on a relation / attribute / function)
-- Autocomplete suggests relations, attributes, and helper functions
+- **Format** — **Pretty** (balanced), **Dense** (compact, blank line between queries), or **Sparse** (fully expanded)
+- Toolbar inserts common operators (stays pinned above the editor); the cursor badge shows line:column and whether you are in π/σ/… subscripts (or on a relation / attribute / function)
+- Autocomplete suggests relations, attributes, helper functions, and RelAlg keywords (`pi` / `project` → `π_{}()`, `join` → `⋈`, …). Accept with **Tab** or **Enter**
 - **Functions** in the calculator header lists helpers (`rownum()`, `length()`, `CASE WHEN …`, …)
 - Shortcut: **Ctrl/Cmd + Enter** to execute; **Ctrl/Cmd + /** to toggle `--` comments
 - Full in-app reference: open **Guide** in the calculator header (or `/guide`)
@@ -75,6 +75,10 @@ Dataset selection and the editor query are restored after a page reload.
 **In scope:** RelAlg + SQL teaching workflow above, including the RelaX-compatible [Group Editor](./group-editor.md).  
 **Out of scope (for now):** BagAlg, TRC, intermediate-node result drill-down.
 
+## Security (short)
+
+Built-in datasets are public teaching data. Your uploads are private to your browser’s owner cookie; others need a share link. See [security.md](./security.md).
+
 ## Docs map
 
 | Doc | Audience |
@@ -84,5 +88,6 @@ Dataset selection and the editor query are restored after a page reload.
 | [functions.md](./functions.md) | Expression helper functions |
 | [relalg-syntax.md](./relalg-syntax.md) | Operator / syntax reference |
 | [api.md](./api.md) | HTTP API |
+| [security.md](./security.md) | Threat model & hardening |
 | [architecture.md](./architecture.md) | How the engine is wired |
 | [development.md](./development.md) | Local setup & tests |

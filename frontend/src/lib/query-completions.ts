@@ -1,14 +1,31 @@
 import {
+  acceptCompletion,
   autocompletion,
   type Completion,
   type CompletionContext,
   type CompletionResult,
 } from "@codemirror/autocomplete";
+import { keymap } from "@codemirror/view";
+import { Prec } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 
 export type SchemaHint = {
   relations: { name: string; columns: { name: string; type: string }[] }[];
 };
+
+function insertWithCursor(snippet: string, cursorOffset: number) {
+  return (
+    view: EditorView,
+    _completion: Completion,
+    from: number,
+    to: number,
+  ) => {
+    view.dispatch({
+      changes: { from, to, insert: snippet },
+      selection: { anchor: from + cursorOffset },
+    });
+  };
+}
 
 function insertWithCursorInParens(snippet: string) {
   return (
@@ -59,7 +76,191 @@ const HELPER_FNS: { label: string; detail: string; apply: string }[] = [
   },
 ];
 
-export function createSchemaCompletions(getSchema: () => SchemaHint | null) {
+/** Plaintext / keyword triggers that insert classical RelAlg symbols. */
+const RELALG_OPS: {
+  label: string;
+  detail: string;
+  apply: string;
+  cursorOffset?: number;
+  aliases: string[];
+  boost?: number;
+}[] = [
+  {
+    label: "π",
+    detail: "projection",
+    apply: "π_{}()",
+    cursorOffset: 3,
+    aliases: ["pi", "project", "projection"],
+    boost: 20,
+  },
+  {
+    label: "σ",
+    detail: "selection",
+    apply: "σ_{}()",
+    cursorOffset: 3,
+    aliases: ["sigma", "selection"],
+    boost: 20,
+  },
+  {
+    label: "ρ",
+    detail: "rename",
+    apply: "ρ_{}()",
+    cursorOffset: 3,
+    aliases: ["rho", "rename"],
+    boost: 18,
+  },
+  {
+    label: "τ",
+    detail: "order by",
+    apply: "τ_{}()",
+    cursorOffset: 3,
+    aliases: ["tau", "order", "sort"],
+    boost: 18,
+  },
+  {
+    label: "γ",
+    detail: "group by",
+    apply: "γ_{}()",
+    cursorOffset: 3,
+    aliases: ["gamma", "group"],
+    boost: 18,
+  },
+  {
+    label: "δ",
+    detail: "duplicate elimination",
+    apply: "δ()",
+    cursorOffset: 2,
+    aliases: ["delta", "distinct"],
+    boost: 18,
+  },
+  {
+    label: "⋈",
+    detail: "natural join",
+    apply: " ⋈ ",
+    aliases: ["join"],
+    boost: 19,
+  },
+  {
+    label: "⋈θ",
+    detail: "theta join",
+    apply: " ⋈_{} ",
+    cursorOffset: 4,
+    aliases: ["theta"],
+    boost: 17,
+  },
+  {
+    label: "⟕",
+    detail: "left outer join",
+    apply: " ⟕ ",
+    aliases: ["left"],
+    boost: 17,
+  },
+  {
+    label: "⟖",
+    detail: "right outer join",
+    apply: " ⟖ ",
+    aliases: ["right"],
+    boost: 17,
+  },
+  {
+    label: "⟗",
+    detail: "full outer join",
+    apply: " ⟗ ",
+    aliases: ["full"],
+    boost: 17,
+  },
+  {
+    label: "⋉",
+    detail: "left semi-join",
+    apply: " ⋉ ",
+    aliases: ["semi", "semijoin"],
+    boost: 16,
+  },
+  {
+    label: "▷",
+    detail: "anti-join",
+    apply: " ▷ ",
+    aliases: ["anti", "antijoin"],
+    boost: 16,
+  },
+  {
+    label: "∪",
+    detail: "union",
+    apply: " ∪ ",
+    aliases: ["union"],
+    boost: 16,
+  },
+  {
+    label: "∩",
+    detail: "intersection",
+    apply: " ∩ ",
+    aliases: ["intersect", "intersection"],
+    boost: 16,
+  },
+  {
+    label: "−",
+    detail: "set difference",
+    apply: " − ",
+    aliases: ["except", "minus", "difference"],
+    boost: 16,
+  },
+  {
+    label: "×",
+    detail: "cross product",
+    apply: " × ",
+    aliases: ["cross"],
+    boost: 16,
+  },
+  {
+    label: "÷",
+    detail: "division",
+    apply: " ÷ ",
+    aliases: ["division"],
+    boost: 16,
+  },
+  {
+    label: "∧",
+    detail: "logical and",
+    apply: " ∧ ",
+    aliases: ["and"],
+    boost: 12,
+  },
+  {
+    label: "∨",
+    detail: "logical or",
+    apply: " ∨ ",
+    aliases: ["or"],
+    boost: 12,
+  },
+  {
+    label: "¬",
+    detail: "logical not",
+    apply: "¬",
+    aliases: ["not"],
+    boost: 12,
+  },
+];
+
+function matchesOp(
+  typed: string,
+  op: (typeof RELALG_OPS)[number],
+): boolean {
+  const lower = typed.toLowerCase();
+  if (!lower) return false;
+  if (op.label.toLowerCase().startsWith(lower)) return true;
+  return op.aliases.some((a) => a.startsWith(lower));
+}
+
+/** Tab accepts an active completion; otherwise falls through to indent. */
+export const tabAcceptCompletion = Prec.highest(
+  keymap.of([{ key: "Tab", run: acceptCompletion }]),
+);
+
+export function createSchemaCompletions(
+  getSchema: () => SchemaHint | null,
+  options?: { relalgOps?: boolean },
+) {
+  const includeOps = options?.relalgOps ?? false;
   return autocompletion({
     override: [
       (context: CompletionContext): CompletionResult | null => {
@@ -67,7 +268,7 @@ export function createSchemaCompletions(getSchema: () => SchemaHint | null) {
         if (!word || (word.from === word.to && !context.explicit)) return null;
         const typed = word.text;
         const schema = getSchema();
-        const options: Completion[] = [];
+        const optionsList: Completion[] = [];
 
         // Relation. → attributes of that relation only
         const dotted = typed.match(/^([A-Za-z_][\w]*)\.(.*)$/);
@@ -83,7 +284,7 @@ export function createSchemaCompletions(getSchema: () => SchemaHint | null) {
                 !partial ||
                 col.name.toLowerCase().startsWith(partial.toLowerCase())
               ) {
-                options.push({
+                optionsList.push({
                   label: `${rel.name}.${col.name}`,
                   type: "property",
                   detail: col.type,
@@ -91,32 +292,67 @@ export function createSchemaCompletions(getSchema: () => SchemaHint | null) {
                 });
               }
             }
-            if (options.length) {
+            if (optionsList.length) {
               return {
                 from: word.from,
-                options,
+                options: optionsList,
                 validFor: /^[\w.]*$/,
               };
             }
           }
         }
 
+        if (includeOps) {
+          for (const op of RELALG_OPS) {
+            if (!matchesOp(typed, op)) continue;
+            const cursor =
+              op.cursorOffset !== undefined
+                ? insertWithCursor(op.apply, op.cursorOffset)
+                : op.apply;
+            optionsList.push({
+              label: op.label,
+              type: "keyword",
+              detail: op.detail,
+              boost: op.boost ?? 15,
+              apply: cursor,
+            });
+            // Also surface under the typed alias so the popup shows why it matched.
+            for (const alias of op.aliases) {
+              if (
+                alias.toLowerCase().startsWith(typed.toLowerCase()) &&
+                alias !== op.label
+              ) {
+                optionsList.push({
+                  label: alias,
+                  type: "keyword",
+                  detail: `→ ${op.label} ${op.detail}`,
+                  boost: (op.boost ?? 15) - 1,
+                  apply:
+                    op.cursorOffset !== undefined
+                      ? insertWithCursor(op.apply, op.cursorOffset)
+                      : op.apply,
+                });
+              }
+            }
+          }
+        }
+
         if (schema) {
           for (const rel of schema.relations) {
-            options.push({
+            optionsList.push({
               label: rel.name,
               type: "class",
               detail: "relation",
               boost: 10,
             });
             for (const col of rel.columns) {
-              options.push({
+              optionsList.push({
                 label: col.name,
                 type: "property",
                 detail: `${rel.name} · ${col.type}`,
                 boost: 5,
               });
-              options.push({
+              optionsList.push({
                 label: `${rel.name}.${col.name}`,
                 type: "property",
                 detail: col.type,
@@ -127,7 +363,7 @@ export function createSchemaCompletions(getSchema: () => SchemaHint | null) {
         }
 
         for (const fn of HELPER_FNS) {
-          options.push({
+          optionsList.push({
             label: fn.label,
             type: "function",
             detail: fn.detail,
@@ -137,9 +373,10 @@ export function createSchemaCompletions(getSchema: () => SchemaHint | null) {
         }
 
         const lower = typed.toLowerCase();
-        const filtered = options.filter((o) =>
-          o.label.toLowerCase().includes(lower),
-        );
+        const filtered = optionsList.filter((o) => {
+          if (o.type === "keyword") return true; // already matched aliases
+          return o.label.toLowerCase().includes(lower);
+        });
         if (!filtered.length) return null;
         return {
           from: word.from,

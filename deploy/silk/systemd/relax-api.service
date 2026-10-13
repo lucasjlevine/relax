@@ -10,6 +10,11 @@ Environment=UPLOAD_DIR=data/uploads
 Environment=USER_DATASETS_DIR=data/user_datasets
 Environment=API_ROOT_PATH=/api
 Environment=CORS_ORIGINS=https://jlhorton.w3.uvm.edu
+Environment=EXPOSE_OPENAPI=false
+Environment=QUERY_TIMEOUT_MS=5000
+Environment=RATE_LIMIT_REQUESTS=60
+Environment=RATE_LIMIT_WINDOW_SECONDS=60
+Environment=DUCKDB_MEMORY_LIMIT=256MB
 ExecStart=%h/venvs/relax/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --proxy-headers
 Restart=on-failure
 RestartSec=3

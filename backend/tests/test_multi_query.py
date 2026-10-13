@@ -64,10 +64,18 @@ def test_format_dense_omits_newlines_and_parens():
     q = "pi title (Movie join Direction join Director)"
     pretty = format_relalg_query(q, style="pretty")
     dense = format_relalg_query(q, style="dense")
-    assert "\n" in pretty
+    sparse = format_relalg_query(q, style="sparse")
     assert dense == "π_{title}(Movie ⋈ Direction ⋈ Director)"
     assert "\n" not in dense
     assert "((" not in dense
+    # Pretty stays balanced (precedence parens, moderate breaks).
+    assert "((" not in pretty
+    assert "Movie ⋈ Direction ⋈ Director" in pretty.replace("\n", " ").replace(
+        "  ", " "
+    )
+    # Sparse fully expands binaries.
+    assert "\n" in sparse
+    assert sparse.count("(") >= pretty.count("(")
 
     long_sub = (
         "pi Movie.title, Actor.fname, Actor.lname ("
@@ -79,6 +87,27 @@ def test_format_dense_omits_newlines_and_parens():
     assert "\n" not in dense_long
     assert "Actor.fname" in dense_long
     assert "⋈_{Cast.act_id = Actor.act_id}" in dense_long
+
+
+def test_format_dense_blank_line_between_queries():
+    from app.parsers.relalg.formatter import format_relalg_query
+
+    q = "pi a (R);\npi b (S);"
+    dense = format_relalg_query(q, style="dense")
+    assert "π_{a}(R);\n\nπ_{b}(S);" == dense
+
+
+def test_empty_comment_label_does_not_drop_query():
+    q = "--\nπ_{a}(R);"
+    parts = split_relalg_statements(q)
+    assert len(parts) == 1
+    assert parts[0][0] == "π_{a}(R)"
+    assert parts[0][1] is None
+
+    from app.parsers.relalg.formatter import format_relalg_query
+
+    out = format_relalg_query(q, style="dense")
+    assert "π_{a}(R)" in out
 
 
 def test_format_preserves_leading_comments():

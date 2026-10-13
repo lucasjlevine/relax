@@ -127,9 +127,11 @@ export default function GuidePage() {
               <strong className="font-medium text-foreground">Format</strong>{" "}
               rewrites prefix style into subscript form (
               <strong className="font-medium text-foreground">Pretty</strong>{" "}
-              indented, or{" "}
+              balanced,{" "}
               <strong className="font-medium text-foreground">Dense</strong>{" "}
-              compact).
+              compact, or{" "}
+              <strong className="font-medium text-foreground">Sparse</strong>{" "}
+              fully expanded).
             </p>
 
             <h3 className="pt-2 text-base font-medium text-foreground">Unary operators</h3>
@@ -332,7 +334,12 @@ SELECT * FROM Sales`}</Pre>
               </li>
               <li>
                 <Code>⌘/Ctrl + Space</Code> — Autocomplete (relations, attributes,
-                helpers)
+                helpers, RelAlg keywords → symbols). Accept with{" "}
+                <Code>Tab</Code> or <Code>Enter</Code>
+              </li>
+              <li>
+                Typing <Code>pi</Code> / <Code>project</Code>, <Code>join</Code>,{" "}
+                <Code>sigma</Code>, … offers the matching unicode operator
               </li>
               <li>
                 After <Code>Relation.</Code>, completions list that relation’s
@@ -343,7 +350,8 @@ SELECT * FROM Sales`}</Pre>
                 subscript
               </li>
               <li>
-                Operator toolbar inserts unicode symbols at the cursor
+                Operator toolbar inserts unicode symbols at the cursor and stays
+                pinned above the editor
               </li>
               <li>
                 Comments: <Code>-- line</Code> and <Code>{"/* block */"}</Code>

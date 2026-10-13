@@ -422,7 +422,7 @@ export async function runQuery(input: {
 export async function formatQuery(input: {
   language: QueryLanguage;
   query: string;
-  style?: "pretty" | "dense";
+  style?: "pretty" | "dense" | "sparse";
 }): Promise<string> {
   const data = await handle<{ formatted: string }>(
     await apiFetch(`${API_BASE}/format`, {

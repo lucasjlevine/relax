@@ -249,17 +249,23 @@ def _is_comment_only(text: str) -> bool:
     return not code.strip()
 
 
+# `[ \t]*` (not `\s*`) after `--` so a bare `--\n` cannot swallow the next line
+# into the label via newline-eating whitespace.
 _COMMENT_LABEL = re.compile(
-    r"^\s*(?:--\s*(?P<label>[^\n]*?)(?:\n|$))+\s*(?P<body>[\s\S]*)$"
+    r"^\s*(?:--[ \t]*(?P<label>[^\n]*)\n)+\s*(?P<body>[\s\S]*)$"
 )
 
 
 def _strip_leading_comment_label(part: str) -> tuple[str, str | None]:
     """Pull leading `--` comment lines into a label; leave the expression body."""
-    m = _COMMENT_LABEL.match(part)
+    text = part.replace("\r\n", "\n")
+    # Append a newline so a final comment-only line (e.g. `--` / `-- note`) matches.
+    padded = text if text.endswith("\n") else text + "\n"
+    m = _COMMENT_LABEL.match(padded)
     if not m:
         return part.strip(), None
-    labels = re.findall(r"--\s*([^\n]*)", part[: m.start("body")])
+    body = m.group("body").strip()
+    labels = re.findall(r"--[ \t]*([^\n]*)", padded[: m.start("body")])
     label = None
     # Prefer the last non-empty comment as the short label
     for t in reversed(labels):
@@ -267,4 +273,4 @@ def _strip_leading_comment_label(part: str) -> tuple[str, str | None]:
         if t:
             label = t
             break
-    return m.group("body").strip(), label
+    return body, label

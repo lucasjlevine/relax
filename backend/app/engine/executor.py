@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import re
+import threading
 import time
 from typing import Any
 
 import duckdb
 
+from app.config import get_settings
 from app.datasets.loader import TYPE_MAP, GroupDef
 from app.models.schemas import (
     ColumnInfo,
@@ -31,10 +34,69 @@ class QueryError(Exception):
 
 
 def _raise_exec(exc: Exception, *, language: str) -> None:
+    if isinstance(exc, duckdb.InterruptException) or "Interrupted" in str(exc):
+        settings = get_settings()
+        raise QueryError(
+            f"Query exceeded the time limit ({settings.query_timeout_ms} ms). "
+            "Simplify the expression (fewer joins / smaller intermediate results).",
+            code="timeout",
+        ) from exc
     raise QueryError(
         humanize_query_error(str(exc), language=language),
         code="execution_error",
     ) from exc
+
+
+def _configure_conn(conn: duckdb.DuckDBPyConnection) -> None:
+    settings = get_settings()
+    conn.execute("SET enable_external_access=false")
+    # Bound resource use on shared hosts (Silk).
+    mem = (settings.duckdb_memory_limit or "256MB").strip()
+    if not re.fullmatch(r"\d+(?:\.\d+)?\s*(?:B|KB|MB|GB|TB)", mem, re.I):
+        mem = "256MB"
+    conn.execute("SET memory_limit=?", [mem])
+    threads = max(1, min(8, int(settings.duckdb_threads)))
+    conn.execute(f"SET threads={threads}")
+
+
+def _execute_timed(
+    conn: duckdb.DuckDBPyConnection,
+    sql: str,
+    *,
+    timeout_ms: int,
+) -> tuple[Any, list[Any]]:
+    """
+    Run ``conn.execute(sql)`` and ``fetchall()`` with an interruptible timeout.
+
+    DuckDB has no statement_timeout setting; we interrupt from a watchdog thread.
+    """
+    box: dict[str, Any] = {}
+
+    def worker() -> None:
+        try:
+            relation = conn.execute(sql)
+            box["description"] = relation.description
+            box["rows"] = relation.fetchall()
+        except Exception as exc:  # noqa: BLE001 — surfaced to caller
+            box["exc"] = exc
+
+    thread = threading.Thread(target=worker, daemon=True)
+    thread.start()
+    thread.join(max(0.05, timeout_ms / 1000.0))
+    if thread.is_alive():
+        try:
+            conn.interrupt()
+        except Exception:  # noqa: BLE001
+            pass
+        thread.join(2.0)
+        raise QueryError(
+            f"Query exceeded the time limit ({timeout_ms} ms). "
+            "Simplify the expression (fewer joins / smaller intermediate results).",
+            code="timeout",
+        )
+    if "exc" in box:
+        raise box["exc"]
+    return box.get("description"), box.get("rows") or []
 
 
 def _duck_type(logical: str) -> str:
@@ -129,30 +191,40 @@ def execute_sql(
     tree: OperatorTreeNode | None = None,
     warnings: list[str] | None = None,
 ) -> QueryResponse:
+    settings = get_settings()
+    timeout_ms = max(100, int(settings.query_timeout_ms))
     conn = duckdb.connect(database=":memory:")
     try:
-        conn.execute("SET enable_external_access=false")
+        _configure_conn(conn)
         register_group(conn, group)
 
         count_sql = f"SELECT COUNT(*) FROM ({sql}) AS _count_sub"
         start = time.perf_counter()
         try:
-            total = int(conn.execute(count_sql).fetchone()[0])
+            _desc, count_rows = _execute_timed(
+                conn, count_sql, timeout_ms=timeout_ms
+            )
+            total = int(count_rows[0][0]) if count_rows else 0
             limited = (
                 f"SELECT * FROM ({sql}) AS _page "
                 f"LIMIT {int(limit)} OFFSET {int(offset)}"
             )
-            relation = conn.execute(limited)
+            description, raw_rows = _execute_timed(
+                conn, limited, timeout_ms=timeout_ms
+            )
+        except QueryError:
+            raise
         except duckdb.Error as exc:
+            _raise_exec(exc, language="sql")
+        except Exception as exc:  # noqa: BLE001
             _raise_exec(exc, language="sql")
         elapsed_ms = (time.perf_counter() - start) * 1000
 
-        description = relation.description or []
         columns = [
             ColumnInfo(name=col[0], type=_map_duck_type(str(col[1])))
-            for col in description
+            for col in (description or [])
         ]
-        rows = [[_serialize_cell(v) for v in row] for row in relation.fetchall()]
+        rows = [[_serialize_cell(v) for v in row] for row in raw_rows]
         return QueryResponse(
             columns=columns,
             rows=rows,
@@ -173,9 +245,18 @@ def execute_relalg(
     offset: int,
     extra_warnings: list[str] | None = None,
 ) -> QueryResponse:
+    settings = get_settings()
+    timeout_ms = max(100, int(settings.query_timeout_ms))
+    max_stmts = max(1, int(settings.max_relalg_statements))
+
     statements = split_relalg_statements(query)
     if not statements:
         raise QueryError("Query must not be empty", code="validation_error")
+    if len(statements) > max_stmts:
+        raise QueryError(
+            f"Too many statements (max {max_stmts}). Split the work across Executes.",
+            code="validation_error",
+        )
 
     parsed: list[tuple[ra.RANode, str | None]] = []
     for body, label in statements:
@@ -194,7 +275,7 @@ def execute_relalg(
 
     conn = duckdb.connect(database=":memory:")
     try:
-        conn.execute("SET enable_external_access=false")
+        _configure_conn(conn)
         register_group(conn, group)
         relation_columns = {
             rel.name: [c.name for c in rel.columns]
@@ -216,28 +297,35 @@ def execute_relalg(
             count_sql = f"SELECT COUNT(*) FROM ({sql}) AS _count_sub"
             start = time.perf_counter()
             try:
-                total = int(conn.execute(count_sql).fetchone()[0])
+                _desc, count_rows = _execute_timed(
+                    conn, count_sql, timeout_ms=timeout_ms
+                )
+                total = int(count_rows[0][0]) if count_rows else 0
                 limited = (
                     f"SELECT * FROM ({sql}) AS _page "
                     f"LIMIT {int(limit)} OFFSET {int(offset)}"
                 )
-                relation = conn.execute(limited)
+                description, raw_rows = _execute_timed(
+                    conn, limited, timeout_ms=timeout_ms
+                )
+            except QueryError as exc:
+                prefix = f"{label}: " if label else ""
+                if prefix and not exc.message.startswith(prefix):
+                    raise QueryError(prefix + exc.message, code=exc.code) from exc
+                raise
             except duckdb.Error as exc:
                 prefix = f"{label}: " if label else ""
-                raise QueryError(
-                    prefix + humanize_query_error(str(exc), language="relalg"),
-                    code="execution_error",
-                ) from exc
+                try:
+                    _raise_exec(exc, language="relalg")
+                except QueryError as qe:
+                    raise QueryError(prefix + qe.message, code=qe.code) from exc
             elapsed_ms = (time.perf_counter() - start) * 1000
             total_ms += elapsed_ms
-            description = relation.description or []
             columns = [
                 ColumnInfo(name=col[0], type=_map_duck_type(str(col[1])))
-                for col in description
+                for col in (description or [])
             ]
-            rows = [
-                [_serialize_cell(v) for v in row] for row in relation.fetchall()
-            ]
+            rows = [[_serialize_cell(v) for v in row] for row in raw_rows]
             blocks.append(
                 QueryResultBlock(
                     index=idx,

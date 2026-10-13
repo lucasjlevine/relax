@@ -33,10 +33,19 @@ def run_query(body: QueryRequest, request: Request) -> QueryResponse:
             status_code=400,
             detail={"message": "Query must not be empty", "code": "validation_error"},
         )
+    if len(body.query) > settings.max_query_chars:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": f"Query exceeds max length ({settings.max_query_chars} characters)",
+                "code": "validation_error",
+            },
+        )
 
     limit = min(body.limit, settings.max_rows)
     try:
-        group = catalog.get(body.datasetId)
+        # Built-ins are public; user datasets require the owner cookie.
+        group = catalog.get_for_owner(body.datasetId, owner_id)
     except DatasetError as exc:
         raise HTTPException(
             status_code=404, detail={"message": str(exc), "code": "not_found"}
@@ -47,6 +56,12 @@ def run_query(body: QueryRequest, request: Request) -> QueryResponse:
             stmts = split_relalg_statements(body.query)
             if not stmts:
                 raise QueryError("Query must not be empty", code="validation_error")
+            if len(stmts) > settings.max_relalg_statements:
+                raise QueryError(
+                    f"Too many statements (max {settings.max_relalg_statements}). "
+                    "Split the work across Executes.",
+                    code="validation_error",
+                )
             nodes = [parse_relalg(body_text) for body_text, _label in stmts]
 
             type_changes: list[TypeChangeInfo] = []
@@ -96,10 +111,19 @@ def run_query(body: QueryRequest, request: Request) -> QueryResponse:
             },
         ) from exc
     except QueryError as exc:
+        status = 408 if exc.code == "timeout" else 400
         raise HTTPException(
-            status_code=400,
+            status_code=status,
             detail={"message": exc.message, "code": exc.code},
         ) from exc
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": "Could not run query. Check syntax and try again.",
+                "code": "query_error",
+            },
+        ) from None
 
 
 @router.post("/format", response_model=FormatResponse)
@@ -111,7 +135,11 @@ def format_query(body: FormatRequest) -> FormatResponse:
         )
     try:
         if body.language == "relalg":
-            style = body.style if body.style in ("pretty", "dense") else "pretty"
+            style = (
+                body.style
+                if body.style in ("pretty", "dense", "sparse")
+                else "pretty"
+            )
             return FormatResponse(
                 formatted=format_relalg_query(body.query, style=style)
             )

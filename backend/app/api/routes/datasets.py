@@ -225,8 +225,9 @@ def copy_shared_dataset(token: str, request: Request) -> DatasetDetail:
 def export_dataset(dataset_id: str, request: Request) -> GroupTextResponse:
     """Export a dataset as RelaX-compatible local_groups text."""
     catalog = request.app.state.catalog
+    owner_id = owner_from_request(request)
     try:
-        group = catalog.get(dataset_id)
+        group = catalog.get_for_owner(dataset_id, owner_id)
     except DatasetError as exc:
         raise _http_dataset_error(exc, not_found=True) from exc
     text = format_group_text(group)
@@ -236,8 +237,9 @@ def export_dataset(dataset_id: str, request: Request) -> GroupTextResponse:
 @router.get("/{dataset_id}/export.txt")
 def export_dataset_plain(dataset_id: str, request: Request) -> PlainTextResponse:
     catalog = request.app.state.catalog
+    owner_id = owner_from_request(request)
     try:
-        group = catalog.get(dataset_id)
+        group = catalog.get_for_owner(dataset_id, owner_id)
     except DatasetError as exc:
         raise _http_dataset_error(exc, not_found=True) from exc
     return PlainTextResponse(
@@ -254,7 +256,7 @@ def get_dataset(dataset_id: str, request: Request) -> DatasetDetail:
     catalog = request.app.state.catalog
     owner_id = owner_from_request(request)
     try:
-        group = catalog.get(dataset_id)
+        group = catalog.get_for_owner(dataset_id, owner_id)
     except DatasetError as exc:
         raise _http_dataset_error(exc, not_found=True) from exc
     return _detail_from_group(group, owner_id=owner_id, catalog=catalog)
@@ -355,8 +357,9 @@ def get_relation(
     dataset_id: str, relation_name: str, request: Request
 ) -> RelationData:
     catalog = request.app.state.catalog
+    owner_id = owner_from_request(request)
     try:
-        group = catalog.get(dataset_id)
+        group = catalog.get_for_owner(dataset_id, owner_id)
         return _relation_data(group, relation_name)
     except DatasetError as exc:
         raise _http_dataset_error(exc, not_found=True) from exc
@@ -428,7 +431,7 @@ def update_column(
                 dataset_id, relation_name, current, body.type, owner_id
             )
         if group is None:
-            group = catalog.get(dataset_id)
+            group = catalog.get_for_owner(dataset_id, owner_id)
     except DatasetError as exc:
         raise _http_dataset_error(exc, not_found="Unknown" in str(exc)) from exc
     return _detail_from_group(group, owner_id=owner_id, catalog=catalog)

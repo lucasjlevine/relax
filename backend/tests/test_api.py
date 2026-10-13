@@ -217,8 +217,20 @@ def test_list_hides_other_owner(tmp_path):
     # Client B (no shared cookies) does not list it
     ids_b = {d["id"] for d in b.get("/api/datasets").json()["datasets"]}
     assert ds not in ids_b
-    # But can still open by id if known
-    assert b.get(f"/api/datasets/{ds}").status_code == 200
+    # And cannot open / export / query by id without ownership
+    assert b.get(f"/api/datasets/{ds}").status_code == 404
+    assert b.get(f"/api/datasets/{ds}/export").status_code == 404
+    assert (
+        b.post(
+            "/api/query",
+            json={
+                "datasetId": ds,
+                "language": "relalg",
+                "query": "π_{*}(A)",
+            },
+        ).status_code
+        == 404
+    )
 
 
 def test_share_copy(tmp_path):

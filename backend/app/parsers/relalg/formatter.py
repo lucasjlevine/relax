@@ -4,7 +4,7 @@ from typing import Literal
 
 from app.parsers.relalg import ast as ra
 
-FormatStyle = Literal["pretty", "dense"]
+FormatStyle = Literal["pretty", "dense", "sparse"]
 
 # Binary operator precedence (higher binds tighter). Joins > set ops.
 _PREC_SET = 1
@@ -84,8 +84,8 @@ def _paren_binary(
     parent_prec: int | None,
     side: str | None,
 ) -> str:
-    """Pretty always wraps binaries; dense omits implied parentheses."""
-    if style != "dense":
+    """Sparse always wraps binaries; pretty/dense omit implied parentheses."""
+    if style == "sparse":
         return f"({body})"
     if parent_prec is None:
         return body
@@ -95,6 +95,32 @@ def _paren_binary(
         return f"({body})"
     # Same precedence, left-associative: only the right child needs parens.
     return body if side == "left" else f"({body})"
+
+
+def _break_binary(
+    left: str,
+    op: str,
+    right: str,
+    *,
+    style: FormatStyle,
+) -> bool:
+    if style == "dense":
+        return False
+    if style == "sparse":
+        return True
+    # Pretty: break when already multiline or the joined line is long.
+    if "\n" in left or "\n" in right:
+        return True
+    return len(left) + len(right) + len(op) > 88
+
+
+def _break_unary(sub: str, child_s: str, *, style: FormatStyle) -> bool:
+    if style == "dense":
+        return False
+    if style == "sparse":
+        return True
+    # Pretty: keep short unaries inline; expand when the argument is heavy.
+    return "\n" in child_s or len(sub) > 64 or len(child_s) > 88
 
 
 def format_relalg(
@@ -107,7 +133,8 @@ def format_relalg(
 ) -> str:
     """Pretty-print RelAlg using classical subscript notation."""
     dense = style == "dense"
-    multiline = not dense
+    # Pretty/sparse omit outer parens on binaries inside op_{…}( … ).
+    group_prec = None if style == "sparse" else _PREC_GROUP
 
     if isinstance(node, ra.Statement):
         parts: list[str] = []
@@ -132,16 +159,13 @@ def format_relalg(
         return result_s
 
     def wrap_sub(op: str, sub: str, child: ra.RANode) -> str:
-        # Child sits inside op_{…}( … ), so binaries there can drop outer parens.
         child_s = format_relalg(
             child,
             level=level + 1,
             style=style,
-            parent_prec=_PREC_GROUP if dense else None,
+            parent_prec=group_prec,
         )
-        if multiline and (
-            "\n" in child_s or len(sub) > 40 or len(child_s) > 56
-        ):
+        if _break_unary(sub, child_s, style=style):
             return f"{op}_{{{sub}}}(\n{_indent(child_s, 1)}\n)"
         return f"{op}_{{{sub}}}({child_s})"
 
@@ -186,8 +210,10 @@ def format_relalg(
             node.child,
             level=level + 1,
             style=style,
-            parent_prec=_PREC_GROUP if dense else None,
+            parent_prec=group_prec,
         )
+        if style != "dense" and ("\n" in child_s or style == "sparse"):
+            return f"δ(\n{_indent(child_s, 1)}\n)"
         return f"δ({child_s})"
 
     binary_ops = {
@@ -207,14 +233,20 @@ def format_relalg(
             right = format_relalg(
                 node.right, level=level + 1, style=style, parent_prec=prec, side="right"
             )
-            if multiline and (
-                "\n" in left
-                or "\n" in right
-                or _binary_prec(node.left) is not None
-                or _binary_prec(node.right) is not None
-                or len(left) + len(right) > 48
-            ):
-                return f"(\n{_indent(left, 1)}\n  {sym}\n{_indent(right, 1)}\n)"
+            if _break_binary(left, sym, right, style=style):
+                body = f"{left}\n  {sym}\n{right}"
+                wrapped = _paren_binary(
+                    body,
+                    style=style,
+                    node_prec=prec,
+                    parent_prec=parent_prec,
+                    side=side,
+                )
+                if wrapped.startswith("(") and "\n" in wrapped:
+                    # Expand parentheses around a multiline binary.
+                    inner = wrapped[1:-1] if wrapped.endswith(")") else wrapped
+                    return f"(\n{_indent(inner, 1)}\n)"
+                return wrapped
             body = f"{left} {sym} {right}"
             return _paren_binary(
                 body,
@@ -244,14 +276,19 @@ def format_relalg(
             )
             cond = getattr(node, "condition", None)
             op = f"{sym}_{{{_fmt_expr(cond)}}}" if cond is not None else sym
-            if multiline and (
-                "\n" in left
-                or "\n" in right
-                or _binary_prec(node.left) is not None
-                or _binary_prec(node.right) is not None
-                or len(left) + len(right) + len(op) > 48
-            ):
-                return f"(\n{_indent(left, 1)}\n  {op}\n{_indent(right, 1)}\n)"
+            if _break_binary(left, op, right, style=style):
+                body = f"{left}\n  {op}\n{right}"
+                wrapped = _paren_binary(
+                    body,
+                    style=style,
+                    node_prec=prec,
+                    parent_prec=parent_prec,
+                    side=side,
+                )
+                if wrapped.startswith("(") and "\n" in wrapped:
+                    inner = wrapped[1:-1] if wrapped.endswith(")") else wrapped
+                    return f"(\n{_indent(inner, 1)}\n)"
+                return wrapped
             body = f"{left} {op} {right}"
             return _paren_binary(
                 body,
@@ -299,7 +336,6 @@ def format_relalg_query(query: str, *, style: FormatStyle = "pretty") -> str:
         return ""
 
     multi = len(parts) > 1 or ";" in text
-    dense = style == "dense"
     chunks: list[str] = []
     for part in parts:
         if not part.strip():
@@ -320,5 +356,5 @@ def format_relalg_query(query: str, *, style: FormatStyle = "pretty") -> str:
         chunks.append(piece)
     if not multi:
         return chunks[0]
-    sep = "\n" if dense else "\n\n"
-    return sep.join(c.rstrip("\n") for c in chunks)
+    # Always separate statements with a blank line (including dense).
+    return "\n\n".join(c.rstrip("\n") for c in chunks)

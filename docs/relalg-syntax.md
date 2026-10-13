@@ -13,7 +13,7 @@ Both **unicode symbols** and **plaintext** keywords are accepted. Keywords are c
 | γ | `gamma` / `group by` | `γ_{cols; aggs}(R)` | `γ_{region; sum(amount)→total}(Sale)` |
 | δ | `delta` / `distinct` | `δ(R)` | `delta (Employee)` |
 
-Use **Format → Pretty** for classical subscripts with indentation, or **Format → Dense** for a compact single-line form that drops implied parentheses.
+Use **Format → Pretty** for balanced classical subscripts, **Format → Dense** for a compact single-line form (blank line between queries) that drops implied parentheses, or **Format → Sparse** for a fully expanded, fully parenthesized layout.
 
 Bracket form `π[a](R)` / `σ[a > 1](R)` is also accepted.
 

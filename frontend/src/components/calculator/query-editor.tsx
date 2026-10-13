@@ -19,6 +19,7 @@ import {
 } from "@/lib/relalg-subscript";
 import {
   createSchemaCompletions,
+  tabAcceptCompletion,
   type SchemaHint,
 } from "@/lib/query-completions";
 import { relalg } from "@/lib/relalg-language";
@@ -90,7 +91,10 @@ export const QueryEditor = forwardRef<QueryEditorHandle, Props>(
     const extensions = useMemo(
       () => [
         ...editorHighlight,
-        createSchemaCompletions(() => schemaRef.current),
+        tabAcceptCompletion,
+        createSchemaCompletions(() => schemaRef.current, {
+          relalgOps: language === "relalg",
+        }),
         keymap.of([{ key: "Mod-/", run: toggleComment }]),
         ...(language === "sql"
           ? [sql()]
@@ -114,9 +118,9 @@ export const QueryEditor = forwardRef<QueryEditorHandle, Props>(
     );
 
     return (
-      <div className="overflow-y-auto rounded-md border bg-card">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border bg-card">
         {language === "relalg" ? (
-          <div className="flex items-center justify-between gap-2 border-b bg-muted/40 px-3 py-1.5">
+          <div className="flex shrink-0 items-center justify-between gap-2 border-b bg-muted/40 px-3 py-1.5">
             <span
               className={`max-w-full truncate rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ${zoneClass(zone.kind)}`}
               title={zone.label}
@@ -137,7 +141,7 @@ export const QueryEditor = forwardRef<QueryEditorHandle, Props>(
               ? "π_{name}(σ_{dept = 'Engineering'}(Employee))"
               : "SELECT name FROM Employee WHERE dept = 'Engineering'"
           }
-          className="text-sm"
+          className="min-h-[12rem] flex-1 overflow-hidden text-sm [&_.cm-editor]:h-full [&_.cm-scroller]:overflow-auto"
         />
       </div>
     );

@@ -50,3 +50,13 @@ curl -sS http://127.0.0.1:8000/api/health
 curl -sS -D - --compressed "https://jlhorton.w3.uvm.edu/api/health"
 open "https://jlhorton.w3.uvm.edu/calc"
 ```
+
+## Security knobs (systemd)
+
+See `deploy/silk/systemd/relax-api.service` and [security.md](./security.md):
+
+- `CORS_ORIGINS` — exact public origin (not `*`)
+- `QUERY_TIMEOUT_MS` — DuckDB interrupt timeout
+- `RATE_LIMIT_REQUESTS` / `RATE_LIMIT_WINDOW_SECONDS`
+- `EXPOSE_OPENAPI=false` — keep `/docs` off in production
+- `DUCKDB_MEMORY_LIMIT` — default `256MB`

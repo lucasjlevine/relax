@@ -2,6 +2,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api.routes import datasets, query
@@ -11,6 +12,7 @@ from app.datasets.ownership import OWNER_COOKIE, ensure_owner_id, set_owner_cook
 from app.datasets.user_store import UserDatasetStore
 from app.datasets.working_catalog import WorkingCatalog
 from app.models.schemas import HealthResponse
+from app.security import RateLimitMiddleware, SecurityHeadersMiddleware
 
 
 class OwnerCookieMiddleware(BaseHTTPMiddleware):
@@ -32,16 +34,44 @@ class OwnerCookieMiddleware(BaseHTTPMiddleware):
 def create_app() -> FastAPI:
     settings = get_settings()
     api_root = (settings.api_root_path or "/api").rstrip("/") or "/api"
-    app = FastAPI(title="relax API", version="0.3.0")
 
+    openapi_url = "/openapi.json" if settings.expose_openapi else None
+    docs_url = "/docs" if settings.expose_openapi else None
+    redoc_url = "/redoc" if settings.expose_openapi else None
+    app = FastAPI(
+        title="relax API",
+        version="0.3.0",
+        openapi_url=openapi_url,
+        docs_url=docs_url,
+        redoc_url=redoc_url,
+    )
+
+    origins = [o for o in settings.cors_origins if o and o != "*"]
+    if not origins:
+        origins = ["http://localhost:3000", "http://127.0.0.1:3000"]
+
+    # Last added = outermost. Order: CORS → rate limit → headers → owner cookie → app
+    app.add_middleware(OwnerCookieMiddleware)
+    app.add_middleware(SecurityHeadersMiddleware)
+    app.add_middleware(
+        RateLimitMiddleware,
+        max_requests=settings.rate_limit_requests,
+        window_seconds=settings.rate_limit_window_seconds,
+        path_prefixes=(
+            f"{api_root}/query",
+            f"{api_root}/format",
+            f"{api_root}/datasets/upload",
+            f"{api_root}/datasets/build",
+            f"{api_root}/datasets/group",
+        ),
+    )
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.cors_origins,
+        allow_origins=origins,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Content-Type", "Accept"],
     )
-    app.add_middleware(OwnerCookieMiddleware)
 
     datasets_path = Path(settings.datasets_path)
     if not datasets_path.is_absolute():
@@ -67,6 +97,22 @@ def create_app() -> FastAPI:
     @app.get(f"{api_root}/health", response_model=HealthResponse)
     def health() -> HealthResponse:
         return HealthResponse(status="ok")
+
+    @app.exception_handler(Exception)
+    async def unhandled_exception_handler(
+        _request: Request, _exc: Exception
+    ) -> JSONResponse:
+        # HTTPException / validation handlers are more specific and win first.
+        # Never leak stack traces or internal paths to clients.
+        return JSONResponse(
+            status_code=500,
+            content={
+                "detail": {
+                    "message": "An unexpected error occurred. Please try again.",
+                    "code": "internal_error",
+                }
+            },
+        )
 
     return app
 

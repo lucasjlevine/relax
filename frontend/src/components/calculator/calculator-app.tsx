@@ -118,6 +118,8 @@ function HistoryDropdown({
   );
 }
 
+type FormatStyle = "pretty" | "dense" | "sparse";
+
 function FormatDropdown({
   anchorRef,
   onClose,
@@ -125,7 +127,7 @@ function FormatDropdown({
 }: {
   anchorRef: React.RefObject<HTMLElement | null>;
   onClose: () => void;
-  onPick: (style: "pretty" | "dense") => void;
+  onPick: (style: FormatStyle) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -157,7 +159,7 @@ function FormatDropdown({
     <div
       ref={ref}
       style={{ top, right }}
-      className="fixed z-[100] w-[12rem] rounded-md border bg-card p-1 shadow-xl"
+      className="fixed z-[100] w-[13rem] rounded-md border bg-card p-1 shadow-xl"
       role="menu"
       aria-label="Format style"
     >
@@ -168,7 +170,7 @@ function FormatDropdown({
         onClick={() => onPick("pretty")}
       >
         <span className="font-medium text-foreground">Pretty</span>
-        <div className="text-muted-foreground">Indented, fully parenthesized</div>
+        <div className="text-muted-foreground">Balanced line breaks</div>
       </button>
       <button
         type="button"
@@ -177,7 +179,16 @@ function FormatDropdown({
         onClick={() => onPick("dense")}
       >
         <span className="font-medium text-foreground">Dense</span>
-        <div className="text-muted-foreground">Compact, fewer parentheses</div>
+        <div className="text-muted-foreground">Compact, blank line between queries</div>
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        className="block w-full rounded px-2 py-1.5 text-left text-xs hover:bg-muted"
+        onClick={() => onPick("sparse")}
+      >
+        <span className="font-medium text-foreground">Sparse</span>
+        <div className="text-muted-foreground">Fully expanded & parenthesized</div>
       </button>
     </div>,
     document.body,
@@ -403,7 +414,7 @@ export function CalculatorApp() {
     }
   };
 
-  const autoformat = async (style: "pretty" | "dense" = "pretty") => {
+  const autoformat = async (style: FormatStyle = "pretty") => {
     setLoading(true);
     setError(null);
     try {
@@ -707,97 +718,104 @@ export function CalculatorApp() {
               </div>
             </div>
           ) : null}
-          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto border-b p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <Tabs value={language} onValueChange={onLanguageChange}>
-                <TabsList>
-                  <TabsTrigger value="relalg">RelAlg</TabsTrigger>
-                  <TabsTrigger value="sql">SQL</TabsTrigger>
-                </TabsList>
-              </Tabs>
-              <div className="relative z-30 flex gap-2">
-                <Button
-                  ref={historyBtnRef}
-                  type="button"
-                  variant="outline"
-                  disabled={!history.length}
-                  onClick={() => {
-                    setHistoryOpen((o) => !o);
-                    setFunctionsOpen(false);
-                  }}
-                >
-                  <History className="h-4 w-4" aria-hidden />
-                  History
-                </Button>
-                {historyOpen ? (
-                  <HistoryDropdown
-                    history={history}
-                    anchorRef={historyBtnRef}
-                    onClose={() => setHistoryOpen(false)}
-                    onPick={(h) => {
-                      setLanguage(h.language);
-                      setQueryFor(h.language, h.query);
-                      setHistoryOpen(false);
-                      if (h.datasetId !== dataset?.id) {
-                        skipNextExample.current = true;
-                        void loadDataset(h.datasetId, { keepQuery: true });
-                      }
+          <div className="flex min-h-0 flex-1 flex-col border-b">
+            <div className="sticky top-0 z-20 shrink-0 space-y-3 border-b bg-background/95 px-4 pb-3 pt-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <Tabs value={language} onValueChange={onLanguageChange}>
+                  <TabsList>
+                    <TabsTrigger value="relalg">RelAlg</TabsTrigger>
+                    <TabsTrigger value="sql">SQL</TabsTrigger>
+                  </TabsList>
+                </Tabs>
+                <div className="relative z-30 flex gap-2">
+                  <Button
+                    ref={historyBtnRef}
+                    type="button"
+                    variant="outline"
+                    disabled={!history.length}
+                    onClick={() => {
+                      setHistoryOpen((o) => !o);
+                      setFunctionsOpen(false);
                     }}
-                  />
-                ) : null}
-                <Button
-                  ref={formatBtnRef}
-                  variant="secondary"
-                  onClick={() => {
-                    setHistoryOpen(false);
-                    setFunctionsOpen(false);
-                    setFormatOpen((o) => !o);
-                  }}
-                  disabled={loading || !query.trim()}
-                >
-                  <AlignLeft className="h-4 w-4" aria-hidden />
-                  Format
-                </Button>
-                {formatOpen ? (
-                  <FormatDropdown
-                    anchorRef={formatBtnRef}
-                    onClose={() => setFormatOpen(false)}
-                    onPick={(style) => void autoformat(style)}
-                  />
-                ) : null}
-                <Button onClick={() => void execute()} disabled={loading || !dataset}>
-                  <Play className="h-4 w-4" aria-hidden />
-                  {loading ? "Working…" : "Execute"}
-                </Button>
+                  >
+                    <History className="h-4 w-4" aria-hidden />
+                    History
+                  </Button>
+                  {historyOpen ? (
+                    <HistoryDropdown
+                      history={history}
+                      anchorRef={historyBtnRef}
+                      onClose={() => setHistoryOpen(false)}
+                      onPick={(h) => {
+                        setLanguage(h.language);
+                        setQueryFor(h.language, h.query);
+                        setHistoryOpen(false);
+                        if (h.datasetId !== dataset?.id) {
+                          skipNextExample.current = true;
+                          void loadDataset(h.datasetId, { keepQuery: true });
+                        }
+                      }}
+                    />
+                  ) : null}
+                  <Button
+                    ref={formatBtnRef}
+                    variant="secondary"
+                    onClick={() => {
+                      setHistoryOpen(false);
+                      setFunctionsOpen(false);
+                      setFormatOpen((o) => !o);
+                    }}
+                    disabled={loading || !query.trim()}
+                  >
+                    <AlignLeft className="h-4 w-4" aria-hidden />
+                    Format
+                  </Button>
+                  {formatOpen ? (
+                    <FormatDropdown
+                      anchorRef={formatBtnRef}
+                      onClose={() => setFormatOpen(false)}
+                      onPick={(style) => void autoformat(style)}
+                    />
+                  ) : null}
+                  <Button
+                    onClick={() => void execute()}
+                    disabled={loading || !dataset}
+                  >
+                    <Play className="h-4 w-4" aria-hidden />
+                    {loading ? "Working…" : "Execute"}
+                  </Button>
+                </div>
               </div>
+
+              {language === "relalg" ? (
+                <OperatorToolbar
+                  onInsert={(text, cursorOffset) =>
+                    editorRef.current?.insertAtCursor(text, cursorOffset)
+                  }
+                  disabled={loading}
+                />
+              ) : null}
             </div>
 
-            {language === "relalg" ? (
-              <OperatorToolbar
-                onInsert={(text, cursorOffset) =>
-                  editorRef.current?.insertAtCursor(text, cursorOffset)
-                }
-                disabled={loading}
+            <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-4">
+              <QueryEditor
+                ref={editorRef}
+                value={query}
+                language={language}
+                schema={schemaHint}
+                onChange={setQuery}
+                onExecute={() => void execute()}
               />
-            ) : null}
 
-            <QueryEditor
-              ref={editorRef}
-              value={query}
-              language={language}
-              schema={schemaHint}
-              onChange={setQuery}
-              onExecute={() => void execute()}
-            />
-
-            {error ? (
-              <Alert variant="destructive">
-                <AlertTitle>{errorHeading}</AlertTitle>
-                <AlertDescription className="whitespace-pre-wrap font-mono text-[13px] leading-relaxed">
-                  {error}
-                </AlertDescription>
-              </Alert>
-            ) : null}
+              {error ? (
+                <Alert variant="destructive" className="shrink-0">
+                  <AlertTitle>{errorHeading}</AlertTitle>
+                  <AlertDescription className="whitespace-pre-wrap font-mono text-[13px] leading-relaxed">
+                    {error}
+                  </AlertDescription>
+                </Alert>
+              ) : null}
+            </div>
           </div>
 
           <ResultsWorkspace result={result} />

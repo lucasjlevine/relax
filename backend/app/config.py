@@ -36,6 +36,14 @@ class Settings(BaseSettings):
     max_rows: int = 1000
     default_limit: int = 100
     query_timeout_ms: int = 5000
+    max_query_chars: int = 100_000
+    max_group_text_chars: int = 1_000_000
+    max_relalg_statements: int = 32
+    duckdb_memory_limit: str = "256MB"
+    duckdb_threads: int = 2
+    rate_limit_requests: int = 60
+    rate_limit_window_seconds: float = 60.0
+    expose_openapi: bool = False
     # NoDecode: systemd Environment=CORS_ORIGINS=https://host (not JSON)
     cors_origins: Annotated[list[str], NoDecode] = [
         "http://localhost:3000",

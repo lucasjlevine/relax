@@ -76,9 +76,9 @@ class SetRowsRequest(BaseModel):
 
 
 class QueryRequest(BaseModel):
-    datasetId: str
+    datasetId: str = Field(max_length=200)
     language: Literal["relalg", "sql"]
-    query: str
+    query: str = Field(max_length=100_000)
     limit: int = Field(default=100, ge=1, le=1000)
     offset: int = Field(default=0, ge=0)
 
@@ -125,10 +125,10 @@ class HealthResponse(BaseModel):
 
 
 class FormatRequest(BaseModel):
-    query: str
+    query: str = Field(max_length=100_000)
     language: Literal["relalg", "sql"] = "relalg"
-    # pretty = indented / parenthesized; dense = compact, fewer parens
-    style: Literal["pretty", "dense"] = "pretty"
+    # pretty = balanced; dense = compact; sparse = fully expanded
+    style: Literal["pretty", "dense", "sparse"] = "pretty"
 
 
 class FormatResponse(BaseModel):
@@ -145,7 +145,7 @@ class BuildRelationRequest(BaseModel):
 class GroupTextRequest(BaseModel):
     """RelaX-compatible local_groups source text."""
 
-    text: str
+    text: str = Field(max_length=1_000_000)
 
 
 class GroupTextResponse(BaseModel):
