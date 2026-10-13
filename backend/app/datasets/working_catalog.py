@@ -41,7 +41,9 @@ class WorkingCatalog:
             built_in = list(self._groups.values())
         if owner_id is None:
             return built_in + self.users.list_groups()
-        return built_in + self.users.list_for_owner(owner_id)
+        owned = self.users.list_for_owner(owner_id)
+        public_others = self.users.list_public(exclude_owner_id=owner_id)
+        return built_in + owned + public_others
 
     def get(self, group_id: str) -> GroupDef:
         """Resolve by id (built-in or any user dataset — unguessable ids)."""
@@ -59,6 +61,32 @@ class WorkingCatalog:
         if group.owner_id != owner_id:
             raise DatasetError(f"Unknown dataset: {group_id}")
         return group
+
+    def get_accessible(self, group_id: str, owner_id: str) -> GroupDef:
+        """Get if built-in, owned, or marked public."""
+        with self._lock:
+            if group_id in self._groups:
+                return self._groups[group_id]
+        group = self.users.get(group_id)
+        if group.owner_id == owner_id or group.is_public:
+            return group
+        raise DatasetError(f"Unknown dataset: {group_id}")
+
+    def set_visibility(
+        self, group_id: str, owner_id: str, *, is_public: bool
+    ) -> GroupDef:
+        group = self.get_for_owner(group_id, owner_id)
+        if self.is_builtin(group_id):
+            raise DatasetError("Built-in datasets cannot change visibility")
+        if group.owner_id != owner_id:
+            raise DatasetError(f"Unknown dataset: {group_id}")
+        group.is_public = bool(is_public)
+        return self._after_mutate(group)
+
+    def duplicate_for_owner(self, group_id: str, owner_id: str) -> GroupDef:
+        """Copy an accessible dataset into the caller's private library."""
+        source = self.get_accessible(group_id, owner_id)
+        return self.users.copy_for_owner(source, owner_id=owner_id)
 
     def _is_user(self, group_id: str) -> bool:
         try:
@@ -93,9 +121,7 @@ class WorkingCatalog:
     def delete_group(self, group_id: str, owner_id: str) -> None:
         with self._lock:
             if group_id in self._groups:
-                # Soft-hide built-in for this process only (not persisted)
-                del self._groups[group_id]
-                return
+                raise DatasetError("Built-in demo datasets cannot be deleted")
         group = self.users.get(group_id)
         if group.owner_id != owner_id:
             raise DatasetError(f"Unknown dataset: {group_id}")

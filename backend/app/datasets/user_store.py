@@ -72,6 +72,7 @@ def group_to_dict(group: GroupDef) -> dict[str, Any]:
         "exampleSql": group.example_sql,
         "forkedFrom": group.forked_from,
         "updatedAt": group.updated_at,
+        "isPublic": bool(group.is_public),
         "relations": {
             name: {
                 "columns": [
@@ -107,6 +108,7 @@ def group_from_dict(data: dict[str, Any]) -> GroupDef:
         share_token=data.get("shareToken"),
         forked_from=data.get("forkedFrom"),
         updated_at=data.get("updatedAt"),
+        is_public=bool(data.get("isPublic", False)),
     )
 
 
@@ -174,6 +176,17 @@ class UserDatasetStore:
         with self._lock:
             return [g for g in self._groups.values() if g.owner_id == owner_id]
 
+    def list_public(self, *, exclude_owner_id: str | None = None) -> list[GroupDef]:
+        with self._lock:
+            out: list[GroupDef] = []
+            for g in self._groups.values():
+                if not g.is_public:
+                    continue
+                if exclude_owner_id and g.owner_id == exclude_owner_id:
+                    continue
+                out.append(g)
+            return out
+
     def get(self, group_id: str) -> GroupDef:
         with self._lock:
             if group_id not in self._groups:
@@ -236,6 +249,7 @@ class UserDatasetStore:
         forked.owner_id = owner_id
         forked.share_token = _new_share_token()
         forked.forked_from = source.forked_from or source.id
+        forked.is_public = False
         forked.name = name or f"{source.name} (copy)"
         if not forked.description:
             forked.description = f"Personal copy of {source.name}"

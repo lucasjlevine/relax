@@ -55,12 +55,14 @@ Schema and relation metadata for one group.
 User-created datasets (upload, build, Group Editor install, and forks of built-ins) are stored on the server as JSON under `data/user_datasets/`.
 
 - **Owner cookie:** `relax_owner` (HttpOnly). Set automatically on first API request. No accounts.
-- **List:** `GET /api/datasets` returns built-ins plus datasets owned by the cookie. Others’ datasets are never listed.
-- **Access by id:** Knowing an unguessable `ds_…` id is enough to `GET` / query it (security = obscurity + list filtering).
+- **List:** `GET /api/datasets` returns built-ins + datasets owned by the cookie + other users’ **public** datasets (`isPublic: true`).
+- **Access:** `GET` / export / query allowed for built-ins, owned datasets, or public datasets. Mutations remain owner-only.
+- **Visibility:** Uploads default private. `PATCH /api/datasets/{id}/visibility` with `{ "isPublic": true|false }` (owner only).
 - **Fork on edit:** Mutating a built-in (`PATCH`, row edits, …) creates a personal copy (`forkedFrom`) and returns the new id. Built-in templates on disk stay unchanged.
-- **Share:** Each owned dataset has a `shareToken`.  
+- **Share / copy:** Each owned dataset has a `shareToken`.  
   - `GET /api/datasets/share/{token}` — preview  
   - `POST /api/datasets/share/{token}/copy` — clone into the caller’s library  
+  - `POST /api/datasets/{id}/copy` — duplicate an accessible dataset into the caller’s private library  
 
 Browser clients must send cookies (`credentials: "include"`).
 
@@ -69,7 +71,9 @@ Browser clients must send cookies (`credentials: "include"`).
 | Method | Path | Purpose |
 |--------|------|---------|
 | `PATCH` | `/api/datasets/{id}` | Rename dataset (`{ "name": "..." }`). Built-ins fork. |
-| `DELETE` | `/api/datasets/{id}` | Delete dataset (built-in: hide for this process; user: remove from disk) |
+| `PATCH` | `/api/datasets/{id}/visibility` | Set `{ "isPublic": true\|false }` (owner only) |
+| `POST` | `/api/datasets/{id}/copy` | Duplicate accessible dataset into caller’s library (private) |
+| `DELETE` | `/api/datasets/{id}` | Delete owned user dataset (built-ins cannot be deleted) |
 | `POST` | `/api/datasets/{id}/upload` | Add CSV as a new relation in this dataset |
 | `POST` | `/api/datasets/{id}/relations` | Add relation (`relationName`, `columns`, `rows`) |
 | `GET` | `/api/datasets/{id}/relations/{name}` | Relation columns + rows |

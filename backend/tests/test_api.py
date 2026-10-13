@@ -233,6 +233,54 @@ def test_list_hides_other_owner(tmp_path):
     )
 
 
+def test_public_dataset_visible_to_others(tmp_path):
+    a = _client(tmp_path)
+    b = TestClient(a.app)
+
+    up = a.post(
+        "/api/datasets/upload",
+        files={"file": ("pub.csv", b"x\n1\n", "text/csv")},
+        data={"relationName": "Pub"},
+    )
+    assert up.status_code == 200
+    body = up.json()
+    ds = body["id"]
+    assert body.get("isPublic") is False
+
+    # Still private for B
+    assert ds not in {d["id"] for d in b.get("/api/datasets").json()["datasets"]}
+    assert b.get(f"/api/datasets/{ds}").status_code == 404
+
+    made = a.patch(
+        f"/api/datasets/{ds}/visibility",
+        json={"isPublic": True},
+    )
+    assert made.status_code == 200
+    assert made.json()["isPublic"] is True
+
+    ids_b = {d["id"] for d in b.get("/api/datasets").json()["datasets"]}
+    assert ds in ids_b
+    assert b.get(f"/api/datasets/{ds}").status_code == 200
+    q = b.post(
+        "/api/query",
+        json={"datasetId": ds, "language": "relalg", "query": "π_{*}(Pub)"},
+    )
+    assert q.status_code == 200
+    assert q.json()["rowCount"] == 1
+
+    # Mutations remain owner-only
+    assert (
+        b.patch(f"/api/datasets/{ds}", json={"name": "Hijacked"}).status_code
+        == 404
+    )
+
+    copied = b.post(f"/api/datasets/{ds}/copy")
+    assert copied.status_code == 200
+    assert copied.json()["owned"] is True
+    assert copied.json()["isPublic"] is False
+    assert copied.json()["id"] != ds
+
+
 def test_share_copy(tmp_path):
     owner = _client(tmp_path)
     up = owner.post(

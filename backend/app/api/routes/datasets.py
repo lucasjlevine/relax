@@ -22,6 +22,7 @@ from app.models.schemas import (
     RenameRelationRequest,
     RowValuesRequest,
     SetRowsRequest,
+    VisibilityRequest,
 )
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
@@ -54,6 +55,7 @@ def _detail_from_group(
         exampleSql=group.example_sql,
         owned=owned or is_builtin,
         isBuiltin=is_builtin,
+        isPublic=bool(group.is_public) if not is_builtin else True,
         shareToken=group.share_token if owned else None,
         forkedFrom=group.forked_from,
     )
@@ -84,18 +86,26 @@ def _http_dataset_error(exc: DatasetError, *, not_found: bool = False) -> HTTPEx
 def list_datasets(request: Request) -> DatasetListResponse:
     catalog = request.app.state.catalog
     owner_id = owner_from_request(request)
-    return DatasetListResponse(
-        datasets=[
+    summaries: list[DatasetSummary] = []
+    for g in catalog.list_groups(owner_id):
+        is_builtin = catalog.is_builtin(g.id)
+        owned = (
+            True
+            if is_builtin
+            else bool(g.owner_id and g.owner_id == owner_id)
+        )
+        summaries.append(
             DatasetSummary(
                 id=g.id,
                 name=g.name,
                 description=g.description,
-                owned=bool(g.owner_id == owner_id) if g.owner_id else False,
-                isBuiltin=catalog.is_builtin(g.id),
+                owned=owned,
+                isBuiltin=is_builtin,
+                isPublic=True if is_builtin else bool(g.is_public),
+                shareToken=g.share_token if owned and not is_builtin else None,
             )
-            for g in catalog.list_groups(owner_id)
-        ]
-    )
+        )
+    return DatasetListResponse(datasets=summaries)
 
 
 # Static paths MUST be registered before /{dataset_id} or POSTs become 405s.
@@ -227,7 +237,7 @@ def export_dataset(dataset_id: str, request: Request) -> GroupTextResponse:
     catalog = request.app.state.catalog
     owner_id = owner_from_request(request)
     try:
-        group = catalog.get_for_owner(dataset_id, owner_id)
+        group = catalog.get_accessible(dataset_id, owner_id)
     except DatasetError as exc:
         raise _http_dataset_error(exc, not_found=True) from exc
     text = format_group_text(group)
@@ -239,7 +249,7 @@ def export_dataset_plain(dataset_id: str, request: Request) -> PlainTextResponse
     catalog = request.app.state.catalog
     owner_id = owner_from_request(request)
     try:
-        group = catalog.get_for_owner(dataset_id, owner_id)
+        group = catalog.get_accessible(dataset_id, owner_id)
     except DatasetError as exc:
         raise _http_dataset_error(exc, not_found=True) from exc
     return PlainTextResponse(
@@ -256,9 +266,36 @@ def get_dataset(dataset_id: str, request: Request) -> DatasetDetail:
     catalog = request.app.state.catalog
     owner_id = owner_from_request(request)
     try:
-        group = catalog.get_for_owner(dataset_id, owner_id)
+        group = catalog.get_accessible(dataset_id, owner_id)
     except DatasetError as exc:
         raise _http_dataset_error(exc, not_found=True) from exc
+    return _detail_from_group(group, owner_id=owner_id, catalog=catalog)
+
+
+@router.patch("/{dataset_id}/visibility", response_model=DatasetDetail)
+def set_dataset_visibility(
+    dataset_id: str, body: VisibilityRequest, request: Request
+) -> DatasetDetail:
+    catalog = request.app.state.catalog
+    owner_id = owner_from_request(request)
+    try:
+        group = catalog.set_visibility(
+            dataset_id, owner_id, is_public=body.isPublic
+        )
+    except DatasetError as exc:
+        raise _http_dataset_error(exc, not_found="Unknown" in str(exc)) from exc
+    return _detail_from_group(group, owner_id=owner_id, catalog=catalog)
+
+
+@router.post("/{dataset_id}/copy", response_model=DatasetDetail)
+def copy_dataset(dataset_id: str, request: Request) -> DatasetDetail:
+    """Duplicate an accessible dataset into the caller's private library."""
+    catalog = request.app.state.catalog
+    owner_id = owner_from_request(request)
+    try:
+        group = catalog.duplicate_for_owner(dataset_id, owner_id)
+    except DatasetError as exc:
+        raise _http_dataset_error(exc, not_found="Unknown" in str(exc)) from exc
     return _detail_from_group(group, owner_id=owner_id, catalog=catalog)
 
 
@@ -359,7 +396,7 @@ def get_relation(
     catalog = request.app.state.catalog
     owner_id = owner_from_request(request)
     try:
-        group = catalog.get_for_owner(dataset_id, owner_id)
+        group = catalog.get_accessible(dataset_id, owner_id)
         return _relation_data(group, relation_name)
     except DatasetError as exc:
         raise _http_dataset_error(exc, not_found=True) from exc

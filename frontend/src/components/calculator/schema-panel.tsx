@@ -1,8 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Pencil, Plus, Trash2 } from "lucide-react";
-import type { ColumnInfo, DatasetDetail, RelationData } from "@/lib/api";
+import { Database, Pencil, Plus, Trash2 } from "lucide-react";
+import type {
+  ColumnInfo,
+  DatasetDetail,
+  DatasetSummary,
+  RelationData,
+} from "@/lib/api";
 import {
   addRelation,
   addRelationRow,
@@ -23,109 +28,137 @@ import {
   uploadRelationCsv,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
 import { FilePicker } from "@/components/ui/file-picker";
-import { GroupEditorPanel } from "@/components/calculator/group-editor";
-
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+/** @deprecated Prefer WorkspaceSheet tabs; kept for type imports. */
 export type SchemaPanelTab = "schema" | "manage" | "upload" | "builder" | "group";
+export type DataPanelTab = "manage" | "upload" | "builder" | "group";
 
-type Props = {
+type SidebarProps = {
   dataset: DatasetDetail | null;
-  datasets: { id: string; name: string }[];
-  activeTab: SchemaPanelTab;
-  onTabChange: (tab: SchemaPanelTab) => void;
+  datasets: DatasetSummary[];
+  onOpenWorkspaces: () => void;
+  onOpenManage: () => void;
   onSelectDataset: (id: string) => void;
-  onDatasetCreated: (detail: DatasetDetail) => void;
-  onDatasetUpdated: (detail: DatasetDetail) => void;
-  onDatasetDeleted: (id: string) => void | Promise<void>;
-  onGroupsInstalled?: (groups: DatasetDetail[]) => void;
 };
 
 const COL_TYPES = ["string", "number", "boolean", "date"] as const;
 
-export function SchemaPanel({
+function workspaceBadge(dataset: DatasetDetail | null) {
+  if (!dataset) return null;
+  if (dataset.isBuiltin) return <Badge variant="secondary">Built-in</Badge>;
+  if (dataset.owned) {
+    return dataset.isPublic ? (
+      <Badge>Public</Badge>
+    ) : (
+      <Badge variant="outline">Private</Badge>
+    );
+  }
+  return <Badge variant="secondary">Public</Badge>;
+}
+
+/** Slim left rail: active workspace + demo shortcuts + schema. */
+export function SchemaSidebar({
   dataset,
   datasets,
-  activeTab,
-  onTabChange,
+  onOpenWorkspaces,
+  onOpenManage,
   onSelectDataset,
-  onDatasetCreated,
-  onDatasetUpdated,
-  onDatasetDeleted,
-  onGroupsInstalled,
-}: Props) {
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const panel = activeTab;
-
-  const switchTab = (id: SchemaPanelTab) => {
-    setError(null);
-    onTabChange(id);
-  };
+}: SidebarProps) {
+  const demos = datasets.filter((d) => d.isBuiltin);
 
   return (
     <aside className="flex h-full min-h-0 w-full flex-col overflow-hidden">
-      <div className="shrink-0 border-b p-3">
-        <Label htmlFor="dataset">Dataset</Label>
-        <select
-          id="dataset"
-          className="mt-1 w-full rounded-md border bg-background px-2 py-1.5 text-sm"
-          value={dataset?.id ?? ""}
-          onChange={(e) => onSelectDataset(e.target.value)}
+      <div className="shrink-0 space-y-2 border-b p-3">
+        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Workspace
+        </p>
+        <button
+          type="button"
+          onClick={onOpenWorkspaces}
+          className="flex w-full items-start gap-2 rounded-md border bg-background px-2.5 py-2 text-left transition-colors hover:bg-muted/60"
         >
-          {datasets.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.name}
-            </option>
-          ))}
-        </select>
-        {dataset?.description ? (
-          <p className="mt-2 text-xs text-muted-foreground">{dataset.description}</p>
-        ) : null}
-        <div className="mt-3 flex flex-wrap gap-1">
-          {(
-            [
-              ["schema", "Schema"],
-              ["manage", "Manage"],
-              ["upload", "Upload"],
-              ["builder", "Build"],
-              ["group", "Group"],
-            ] as const
-          ).map(([id, label]) => (
-            <Button
-              key={id}
-              type="button"
-              size="sm"
-              variant={panel === id ? "default" : "outline"}
-              onClick={() => switchTab(id)}
-            >
-              {label}
-            </Button>
-          ))}
+          <Database className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-medium text-foreground">
+              {dataset?.name ?? "Choose a workspace"}
+            </span>
+            {dataset?.description ? (
+              <span className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+                {dataset.description}
+              </span>
+            ) : (
+              <span className="mt-0.5 block text-xs text-muted-foreground">
+                Open workspaces to switch datasets
+              </span>
+            )}
+          </span>
+        </button>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {workspaceBadge(dataset)}
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="ml-auto"
+            onClick={onOpenManage}
+            disabled={
+              !dataset ||
+              (!dataset.isBuiltin && dataset.owned === false)
+            }
+            title={
+              dataset && !dataset.isBuiltin && dataset.owned === false
+                ? "Duplicate this public dataset to edit it"
+                : undefined
+            }
+          >
+            Manage data
+          </Button>
         </div>
+        {demos.length ? (
+          <div className="space-y-1.5 pt-1">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Demo datasets
+            </p>
+            <div className="flex flex-wrap gap-1">
+              {demos.map((d) => (
+                <Button
+                  key={d.id}
+                  type="button"
+                  size="sm"
+                  variant={dataset?.id === d.id ? "default" : "outline"}
+                  className="h-7 px-2 text-xs"
+                  onClick={() => onSelectDataset(d.id)}
+                >
+                  {d.name}
+                </Button>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </div>
 
-      <div
-        className={`min-h-0 min-w-0 flex-1 p-3 ${
-          panel === "group" ? "flex flex-col overflow-hidden" : "overflow-auto"
-        }`}
-      >
-        {error ? (
-          <Alert variant="destructive" className="mb-3 shrink-0">
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        ) : null}
-
-        {panel === "schema" ? (
-          <>
-            <h2 className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Relations
-            </h2>
+      <ScrollArea className="min-h-0 flex-1">
+        <div className="space-y-3 p-3">
+          <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Schema
+          </h2>
+          {!dataset ? (
+            <p className="text-sm text-muted-foreground">No dataset open.</p>
+          ) : (
             <ul className="space-y-3">
-              {dataset?.relations.map((rel) => (
+              {dataset.relations.map((rel) => (
                 <li key={rel.name} className="rounded-md border bg-background p-2">
                   <div className="flex items-baseline justify-between gap-2">
                     <span className="font-semibold text-primary">{rel.name}</span>
@@ -135,7 +168,10 @@ export function SchemaPanel({
                   </div>
                   <ul className="mt-1 space-y-0.5">
                     {rel.columns.map((col) => (
-                      <li key={col.name} className="font-mono text-xs text-muted-foreground">
+                      <li
+                        key={col.name}
+                        className="font-mono text-xs text-muted-foreground"
+                      >
                         {col.name}
                         <span className="text-foreground/40"> : {col.type}</span>
                       </li>
@@ -144,66 +180,19 @@ export function SchemaPanel({
                 </li>
               ))}
             </ul>
-          </>
-        ) : null}
-
-        {panel === "manage" && dataset ? (
-          <ManagePanel
-            dataset={dataset}
-            busy={busy}
-            setBusy={setBusy}
-            setError={setError}
-            onUpdated={onDatasetUpdated}
-            onDeleted={onDatasetDeleted}
-          />
-        ) : null}
-
-        {panel === "manage" && !dataset ? (
-          <p className="text-sm text-muted-foreground">Select a dataset to manage.</p>
-        ) : null}
-
-        {panel === "upload" ? (
-          <UploadPanel
-            busy={busy}
-            setBusy={setBusy}
-            setError={setError}
-            onCreated={(d) => {
-              onDatasetCreated(d);
-              switchTab("schema");
-            }}
-          />
-        ) : null}
-
-        {panel === "builder" ? (
-          <BuilderPanel
-            busy={busy}
-            setBusy={setBusy}
-            setError={setError}
-            onCreated={(d) => {
-              onDatasetCreated(d);
-              switchTab("schema");
-            }}
-          />
-        ) : null}
-
-        {panel === "group" ? (
-          <GroupEditorPanel
-            dataset={dataset}
-            busy={busy}
-            setBusy={setBusy}
-            setError={setError}
-            onInstalled={(groups) => {
-              onGroupsInstalled?.(groups);
-              switchTab("schema");
-            }}
-          />
-        ) : null}
-      </div>
+          )}
+        </div>
+      </ScrollArea>
     </aside>
   );
 }
 
-function ManagePanel({
+/** @deprecated Use SchemaSidebar + WorkspaceSheet. */
+export function SchemaPanel(props: SidebarProps) {
+  return <SchemaSidebar {...props} />;
+}
+
+export function ManagePanel({
   dataset,
   busy,
   setBusy,
@@ -393,7 +382,7 @@ function ManagePanel({
 
       <div className="space-y-2">
         <div className="flex items-center justify-between gap-2">
-          <Label htmlFor="rel-pick">Relation</Label>
+          <Label>Relation</Label>
           <Button
             type="button"
             size="sm"
@@ -404,18 +393,18 @@ function ManagePanel({
             Add relation
           </Button>
         </div>
-        <select
-          id="rel-pick"
-          className="w-full rounded-md border bg-background px-2 py-1.5 text-sm"
-          value={activeRel}
-          onChange={(e) => setActiveRel(e.target.value)}
-        >
-          {dataset.relations.map((r) => (
-            <option key={r.name} value={r.name}>
-              {r.name} ({r.rowCount})
-            </option>
-          ))}
-        </select>
+        <Select value={activeRel} onValueChange={setActiveRel}>
+          <SelectTrigger className="w-full">
+            <SelectValue placeholder="Select relation" />
+          </SelectTrigger>
+          <SelectContent>
+            {dataset.relations.map((r) => (
+              <SelectItem key={r.name} value={r.name}>
+                {r.name} ({r.rowCount})
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       {showAddRel ? (
@@ -951,7 +940,7 @@ function ManagePanel({
   );
 }
 
-function UploadPanel({
+export function UploadPanel({
   busy,
   setBusy,
   setError,
@@ -1070,7 +1059,7 @@ function UploadPanel({
 type ColDraft = { name: string; type: string };
 type RowDraft = string[];
 
-function BuilderPanel({
+export function BuilderPanel({
   busy,
   setBusy,
   setError,

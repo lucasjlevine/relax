@@ -22,6 +22,8 @@ class DatasetSummary(BaseModel):
     description: str
     owned: bool = False
     isBuiltin: bool = False
+    isPublic: bool = False
+    shareToken: str | None = None
 
 
 class DatasetDetail(DatasetSummary):
@@ -30,6 +32,10 @@ class DatasetDetail(DatasetSummary):
     exampleSql: str | None = None
     shareToken: str | None = None
     forkedFrom: str | None = None
+
+
+class VisibilityRequest(BaseModel):
+    isPublic: bool
 
 
 class RelationData(BaseModel):

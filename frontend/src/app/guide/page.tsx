@@ -359,41 +359,32 @@ SELECT * FROM Sales`}</Pre>
             </ul>
           </Section>
 
-          <Section id="data" title="Datasets">
+          <Section id="data" title="Workspaces &amp; datasets">
             <p>
               Built-in groups: <Code>basics</Code>, <Code>joins</Code>,{" "}
               <Code>setops</Code>, <Code>aggregates</Code>, <Code>library</Code>. Each
-              loads an example RelAlg and SQL query when selected.
+              dataset is a <strong className="font-medium text-foreground">workspace</strong>{" "}
+              with its own RelAlg/SQL drafts and History (saved in this browser).
             </p>
-            <p>Left panel tabs:</p>
             <ul className="list-disc space-y-2 pl-5">
               <li>
-                <strong className="font-medium text-foreground">Schema</strong> —
-                relation names, columns, row counts
+                <strong className="font-medium text-foreground">Sidebar</strong> —
+                active workspace + schema (relations / columns)
               </li>
               <li>
-                <strong className="font-medium text-foreground">Manage</strong> —
-                rename/delete, edit types and rows, add relations (auto-widens the
-                panel)
+                <strong className="font-medium text-foreground">Workspaces</strong> —
+                overlay to open Built-in / Mine / Public datasets; rename, delete,
+                share, duplicate, make public or private
               </li>
               <li>
-                <strong className="font-medium text-foreground">Upload</strong> — CSV /
-                SQLite as a new dataset
-              </li>
-              <li>
-                <strong className="font-medium text-foreground">Build</strong> — define
-                columns and cells in the UI
-              </li>
-              <li>
-                <strong className="font-medium text-foreground">Group</strong> —
-                RelaX-compatible Group Editor (<code className="font-mono text-xs">local_groups</code>{" "}
-                text): Preview, Use, Load current, Download
+                <strong className="font-medium text-foreground">Manage data</strong> —
+                same overlay: Manage relations/rows, Upload, Build, Group Editor
               </li>
             </ul>
             <p className="text-sm">
-              Your uploads and edits are saved on the server for this browser
-              (cookie ownership). Dataset choice and the editor query are restored
-              after a browser reload.
+              Uploads default to private. Public datasets appear for everyone to
+              open and query (edits stay with the owner). Drafts and history restore
+              after a reload.
             </p>
           </Section>
 

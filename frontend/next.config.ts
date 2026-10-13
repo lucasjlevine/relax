@@ -9,6 +9,17 @@ const silkDeploy = process.env.SILK_DEPLOY === "1";
 const apiUpstream =
   process.env.RELAX_API_UPSTREAM || "http://127.0.0.1:8000";
 
+// Local next dev talks to uvicorn on :8000 (cross-origin). Silk uses same-origin
+// `/api` rewrites, so `'self'` alone is enough there — keep localhost ports so a
+// mis-set NEXT_PUBLIC_API_URL cannot hard-break the calculator.
+const connectSrc = [
+  "'self'",
+  "http://localhost:8000",
+  "http://127.0.0.1:8000",
+  "ws://localhost:3000",
+  "ws://127.0.0.1:3000",
+].join(" ");
+
 const securityHeaders = [
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "X-Frame-Options", value: "DENY" },
@@ -25,7 +36,7 @@ const securityHeaders = [
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob:",
       "font-src 'self' data:",
-      "connect-src 'self'",
+      `connect-src ${connectSrc}`,
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",

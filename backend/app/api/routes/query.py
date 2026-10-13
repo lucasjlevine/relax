@@ -44,8 +44,8 @@ def run_query(body: QueryRequest, request: Request) -> QueryResponse:
 
     limit = min(body.limit, settings.max_rows)
     try:
-        # Built-ins are public; user datasets require the owner cookie.
-        group = catalog.get_for_owner(body.datasetId, owner_id)
+        # Built-ins + public user datasets are readable; private need owner cookie.
+        group = catalog.get_accessible(body.datasetId, owner_id)
     except DatasetError as exc:
         raise HTTPException(
             status_code=404, detail={"message": str(exc), "code": "not_found"}

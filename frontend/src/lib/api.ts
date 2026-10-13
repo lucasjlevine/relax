@@ -1,5 +1,14 @@
 /** Full API root including path prefix. Silk: `/api` (Next proxies to uvicorn). */
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
+function resolveApiBase(raw: string | undefined): string {
+  const fallback = "http://localhost:8000/api";
+  if (!raw?.trim()) return fallback;
+  const base = raw.trim().replace(/\/+$/, "");
+  if (base === "/api" || base.endsWith("/api")) return base;
+  // Common misconfig: host/port without the `/api` prefix → 404 / Failed to fetch
+  return `${base}/api`;
+}
+
+const API_BASE = resolveApiBase(process.env.NEXT_PUBLIC_API_URL);
 
 export type ColumnInfo = { name: string; type: string };
 export type RelationInfo = {
@@ -13,6 +22,8 @@ export type DatasetSummary = {
   description: string;
   owned?: boolean;
   isBuiltin?: boolean;
+  isPublic?: boolean;
+  shareToken?: string | null;
 };
 export type DatasetDetail = DatasetSummary & {
   relations: RelationInfo[];
@@ -166,6 +177,27 @@ export async function getDataset(id: string): Promise<DatasetDetail> {
 export async function getSharedDataset(token: string): Promise<DatasetDetail> {
   return handle<DatasetDetail>(
     await apiFetch(`${API_BASE}/datasets/share/${encodeURIComponent(token)}`),
+  );
+}
+
+export async function setDatasetVisibility(
+  id: string,
+  isPublic: boolean,
+): Promise<DatasetDetail> {
+  return handle<DatasetDetail>(
+    await apiFetch(`${API_BASE}/datasets/${encodeURIComponent(id)}/visibility`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ isPublic }),
+    }),
+  );
+}
+
+export async function copyDataset(id: string): Promise<DatasetDetail> {
+  return handle<DatasetDetail>(
+    await apiFetch(`${API_BASE}/datasets/${encodeURIComponent(id)}/copy`, {
+      method: "POST",
+    }),
   );
 }
 

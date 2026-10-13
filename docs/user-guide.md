@@ -39,26 +39,23 @@ User-facing guide page: `/guide` in the app
 
 Each group ships a formatted RelAlg example and a matching SQL example.
 
-## Managing data
+## Workspaces
 
-In the calculator left panel:
+Each dataset is a **workspace**: RelAlg/SQL drafts and **History** are stored per dataset in the browser (`localStorage`). Switching workspaces saves the current drafts and restores that dataset’s saved queries.
 
-1. **Schema** — relation names, columns, row counts  
-2. **Manage** — rename/delete dataset, relations, and columns; change column types (currency like `$50` coerces to numbers; bad values become null); add columns; edit rows; add another relation (empty or CSV) to the same dataset  
-3. **Upload** — `.csv` / `.db` / `.sqlite` as a new dataset  
-4. **Build** — define columns and cells without writing a file  
-5. **Group** — RelaX-compatible Group Editor: edit `local_groups` text, Preview / Use, Load current, Download (see [group-editor.md](./group-editor.md))
-
-**Sidebar tip:** Opening **Manage** or **Group** auto-expands the left panel; drag its right edge to resize. Width is remembered in the browser. Wide tables scroll horizontally.
+- **Left sidebar** — active workspace name + schema (relations / columns). Drag the edge to resize.
+- **Workspaces** (header or sidebar) — sheet overlay to open Built-in / Mine / Public datasets; rename, delete, share, duplicate, or toggle public/private.
+- **Manage data** — same sheet’s Data tab: Manage relations/rows, Upload, Build, Group Editor.
 
 ### Persistence & sharing
 
 - Uploads, builds, Group installs, and edits to built-ins are saved on the server under `backend/data/user_datasets/` (JSON), keyed by an opaque browser cookie (`relax_owner`). Survives backend restarts.
-- Your dataset list shows built-ins plus **your** datasets only.
+- New uploads default to **private** (owner + share link only). **Make public** lists the dataset for everyone and allows them to open/query (not edit). Duplicate copies a public dataset into your private library.
 - Editing a built-in (rename, rows, …) creates a **personal copy**; the calculator switches to it.
-- **Manage → Copy share link** produces `/calc?share=…`. Recipients can preview and **Add to my datasets**.
+- **Copy share link** produces `/calc?share=…`. Recipients can preview and **Add to my datasets**.
 
 Edits never rewrite the built-in `local_groups` file on disk.
+
 ## Results
 
 After **Execute**:
@@ -66,9 +63,9 @@ After **Execute**:
 - Scrollable result table  
 - Compact operator tree (narrow column on the right)  
 - **CSV** download of the current result page  
-- Entry added to **History** (browser-local) for reuse  
+- Entry added to that workspace’s **History** (browser-local)  
 
-Dataset selection and the editor query are restored after a page reload.
+Active workspace, drafts, and per-dataset history are restored after a page reload.
 
 ## Scope boundaries
 
@@ -77,7 +74,7 @@ Dataset selection and the editor query are restored after a page reload.
 
 ## Security (short)
 
-Built-in datasets are public teaching data. Your uploads are private to your browser’s owner cookie; others need a share link. See [security.md](./security.md).
+Built-in datasets are always available. Your uploads default to private (owner cookie + share link). Datasets you mark **public** are world-readable/queryable. See [security.md](./security.md).
 
 ## Docs map
 

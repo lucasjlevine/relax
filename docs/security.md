@@ -7,7 +7,7 @@ Relational Playground is a **teaching calculator**: built-in datasets are public
 | Claim | Reality |
 |-------|---------|
 | SQL injection on `/api/query` | RelAlg is compiled with quoted identifiers and escaped literals; SQL mode is validated with sqlglot and only SELECT-family statements execute. There is no string-concatenated SQL from user input. |
-| “Missing authentication” on query | Built-ins are intentionally public. **User datasets require the owner cookie** for read/query/export. Sharing is via unguessable `shr_…` tokens. |
+| “Missing authentication” on query | Built-ins are intentionally public. **Private** user datasets require the owner cookie (or share token). **Public** user datasets are listed and readable/queryable by anyone; mutations stay owner-only. |
 | Share-token enumeration | Tokens are 128-bit random; lookup is by exact key. |
 | MySQL `SLEEP` / `information_schema` dumps | Not applicable — execution is DuckDB over registered teaching tables only. |
 
@@ -15,7 +15,8 @@ Relational Playground is a **teaching calculator**: built-in datasets are public
 
 - DuckDB: no external access, memory/thread caps, interruptible query timeout (`QUERY_TIMEOUT_MS`)
 - RelAlg: statement count cap, query body max length, allowlisted helper/aggregate functions only
-- Owner-scoped dataset GET / export / query (built-ins remain public)
+- Dataset access: built-ins + owned + `isPublic` for GET / export / query; mutations owner-only
+- Visibility toggle (`PATCH …/visibility`); uploads default private
 - In-process rate limits on query/format/upload/build/group
 - Security headers on API + Next.js (`CSP`, `X-Frame-Options`, `X-Content-Type-Options`, …)
 - OpenAPI/docs disabled by default (`EXPOSE_OPENAPI=false`)

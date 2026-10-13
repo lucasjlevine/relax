@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
-import { AlignLeft, History, PanelLeft, Play } from "lucide-react";
+import { AlignLeft, FolderOpen, History, PanelLeft, Play } from "lucide-react";
 import {
   formatQuery,
   getDataset,
@@ -18,17 +18,25 @@ import {
   type QueryResponse,
 } from "@/lib/api";
 import {
-  loadHistory,
+  getActiveWorkspaceId,
+  getWorkspace,
   loadSession,
-  pushHistory,
+  loadWorkspaceHistory,
+  pushWorkspaceHistory,
   saveSession,
+  saveWorkspace,
+  setActiveWorkspaceId,
   type HistoryEntry,
 } from "@/lib/session";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
-import { SchemaPanel, type SchemaPanelTab } from "@/components/calculator/schema-panel";
+import {
+  SchemaSidebar,
+  type DataPanelTab,
+} from "@/components/calculator/schema-panel";
+import { WorkspaceSheet } from "@/components/calculator/workspace-sheet";
 import {
   QueryEditor,
   type QueryEditorHandle,
@@ -40,8 +48,6 @@ import { ResultsWorkspace } from "@/components/calculator/results-workspace";
 const SIDEBAR_MIN = 240;
 const SIDEBAR_MAX = 720;
 const SIDEBAR_DEFAULT = 300;
-const SIDEBAR_MANAGE = 440;
-const SIDEBAR_GROUP = 520;
 const SIDEBAR_STORAGE_KEY = "relax.sidebarWidth";
 
 function clampSidebar(width: number) {
@@ -219,7 +225,9 @@ export function CalculatorApp() {
   const [loading, setLoading] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [panelTab, setPanelTab] = useState<SchemaPanelTab>("schema");
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [sheetTab, setSheetTab] = useState<"workspaces" | "data">("workspaces");
+  const [dataTab, setDataTab] = useState<DataPanelTab>("manage");
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [formatOpen, setFormatOpen] = useState(false);
@@ -233,10 +241,29 @@ export function CalculatorApp() {
   const historyBtnRef = useRef<HTMLButtonElement>(null);
   const formatBtnRef = useRef<HTMLButtonElement>(null);
   const booted = useRef(false);
+  const workspaceRef = useRef<{
+    id: string | null;
+    language: QueryLanguage;
+    queryRelAlg: string;
+    querySql: string;
+  }>({ id: null, language: "relalg", queryRelAlg: "", querySql: "" });
 
   useEffect(() => {
-    setHistory(loadHistory());
-  }, []);
+    workspaceRef.current = {
+      id: dataset?.id ?? null,
+      language,
+      queryRelAlg,
+      querySql,
+    };
+  }, [dataset?.id, language, queryRelAlg, querySql]);
+
+  useEffect(() => {
+    if (dataset?.id) {
+      setHistory(loadWorkspaceHistory(dataset.id));
+    } else {
+      setHistory([]);
+    }
+  }, [dataset?.id]);
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 767px)");
@@ -275,24 +302,53 @@ export function CalculatorApp() {
     });
   }, [dataset?.id, language, queryRelAlg, querySql]);
 
-  const applyExamples = useCallback((detail: DatasetDetail) => {
-    setQueryRelAlg(detail.exampleRelAlg?.trim() ?? "");
-    setQuerySql(detail.exampleSql?.trim() ?? "");
+  const persistCurrentWorkspace = useCallback(() => {
+    const cur = workspaceRef.current;
+    if (!cur.id) return;
+    const prev = getWorkspace(cur.id);
+    saveWorkspace(cur.id, {
+      queryRelAlg: cur.queryRelAlg,
+      querySql: cur.querySql,
+      language: cur.language,
+      history: prev.history,
+    });
   }, []);
 
-  const loadDataset = useCallback(
-    async (id: string, opts?: { keepQuery?: boolean }) => {
-      const detail = await getDataset(id);
+  const applyWorkspaceState = useCallback(
+    (detail: DatasetDetail, opts?: { keepQuery?: boolean }) => {
       setDataset(detail);
+      setActiveWorkspaceId(detail.id);
       setResult(null);
       setError(null);
       if (opts?.keepQuery || skipNextExample.current) {
         skipNextExample.current = false;
+        setHistory(loadWorkspaceHistory(detail.id));
         return;
       }
-      applyExamples(detail);
+      const ws = getWorkspace(detail.id);
+      const hasDraft =
+        ws.queryRelAlg.trim().length > 0 || ws.querySql.trim().length > 0;
+      if (hasDraft) {
+        setQueryRelAlg(ws.queryRelAlg);
+        setQuerySql(ws.querySql);
+        setLanguage(ws.language);
+      } else {
+        setQueryRelAlg(detail.exampleRelAlg?.trim() ?? "");
+        setQuerySql(detail.exampleSql?.trim() ?? "");
+        setLanguage("relalg");
+      }
+      setHistory(ws.history);
     },
-    [applyExamples],
+    [],
+  );
+
+  const loadDataset = useCallback(
+    async (id: string, opts?: { keepQuery?: boolean; skipPersist?: boolean }) => {
+      if (!opts?.skipPersist) persistCurrentWorkspace();
+      const detail = await getDataset(id);
+      applyWorkspaceState(detail, opts);
+    },
+    [applyWorkspaceState, persistCurrentWorkspace],
   );
 
   const refreshDatasets = useCallback(
@@ -300,12 +356,17 @@ export function CalculatorApp() {
       const list = await listDatasets();
       setDatasets(list);
       const session = !booted.current ? loadSession() : null;
-      const id =
+      const active = !booted.current ? getActiveWorkspaceId() : null;
+      const preferred =
         selectId ??
-        (session?.datasetId && list.some((d) => d.id === session.datasetId)
-          ? session.datasetId
-          : list[0]?.id);
-      if (!booted.current && session) {
+        active ??
+        session?.datasetId ??
+        null;
+      const id =
+        preferred && list.some((d) => d.id === preferred)
+          ? preferred
+          : list[0]?.id;
+      if (!booted.current && session && session.datasetId === id) {
         if (session.language === "relalg" || session.language === "sql") {
           setLanguage(session.language);
         }
@@ -320,12 +381,16 @@ export function CalculatorApp() {
       }
       booted.current = true;
       if (id) {
-        await loadDataset(id, { keepQuery: skipNextExample.current });
+        await loadDataset(id, {
+          keepQuery: skipNextExample.current,
+          skipPersist: true,
+        });
       } else {
         setDataset(null);
         setQueryRelAlg("");
         setQuerySql("");
         setResult(null);
+        setHistory([]);
       }
     },
     [loadDataset],
@@ -397,9 +462,10 @@ export function CalculatorApp() {
         const detail = await getDataset(dataset.id);
         syncDatasetList(detail);
       }
+      const histId = res.datasetId ?? dataset.id;
       setHistory(
-        pushHistory({
-          datasetId: res.datasetId ?? dataset.id,
+        pushWorkspaceHistory(histId, {
+          datasetId: histId,
           datasetName: dataset.name,
           language,
           query: query.trim(),
@@ -434,16 +500,17 @@ export function CalculatorApp() {
     setDatasets((prev) => {
       let next = prev;
       if (previousId && previousId !== detail.id) {
-        // Keep built-in in list; add forked copy
         next = prev.filter((d) => d.id !== detail.id);
       }
       const exists = next.some((d) => d.id === detail.id);
-      const summary = {
+      const summary: DatasetSummary = {
         id: detail.id,
         name: detail.name,
         description: detail.description,
         owned: detail.owned,
         isBuiltin: detail.isBuiltin,
+        isPublic: detail.isPublic,
+        shareToken: detail.shareToken,
       };
       if (!exists) {
         return [...next, summary];
@@ -451,6 +518,7 @@ export function CalculatorApp() {
       return next.map((d) => (d.id === detail.id ? summary : d));
     });
     setDataset(detail);
+    setActiveWorkspaceId(detail.id);
     if (previousId && previousId !== detail.id && detail.forkedFrom) {
       setForkNotice(
         `Saved as a personal copy of “${detail.forkedFrom}”. Further edits stay on this copy.`,
@@ -462,13 +530,16 @@ export function CalculatorApp() {
     const previousId = dataset?.id;
     syncDatasetList(detail, { previousId });
   };
-  const onPanelChange = (tab: SchemaPanelTab) => {
-    setPanelTab(tab);
-    if (tab === "manage" || tab === "group") {
-      setSidebarCollapsed(false);
-      const min = tab === "group" ? SIDEBAR_GROUP : SIDEBAR_MANAGE;
-      setSidebarWidth((w) => clampSidebar(Math.max(w, min)));
-    }
+
+  const openWorkspacesSheet = () => {
+    setSheetTab("workspaces");
+    setSheetOpen(true);
+  };
+
+  const openManageSheet = () => {
+    setSheetTab("data");
+    setDataTab("manage");
+    setSheetOpen(true);
   };
 
   const onResizeStart = (event: React.MouseEvent) => {
@@ -538,6 +609,15 @@ export function CalculatorApp() {
             <PanelLeft className="h-4 w-4" />
             {sidebarCollapsed ? "Show panel" : "Hide panel"}
           </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={openWorkspacesSheet}
+          >
+            <FolderOpen className="h-4 w-4" aria-hidden />
+            Workspaces
+          </Button>
           <button
             ref={functionsBtnRef}
             type="button"
@@ -574,66 +654,13 @@ export function CalculatorApp() {
             className="flex h-full min-w-0 flex-1 flex-col"
             style={{ width: sidebarWidth, minWidth: sidebarWidth }}
           >
-            <SchemaPanel
+            <SchemaSidebar
               dataset={dataset}
               datasets={datasets}
-              activeTab={panelTab}
-              onTabChange={onPanelChange}
+              onOpenWorkspaces={openWorkspacesSheet}
+              onOpenManage={openManageSheet}
               onSelectDataset={(id) => {
                 void loadDataset(id);
-              }}
-              onDatasetCreated={(detail) => {
-                syncDatasetList(detail);
-                setResult(null);
-                setError(null);
-                setForkNotice(null);
-                applyExamples(detail);
-                const first = detail.relations[0]?.name;
-                if (!detail.exampleRelAlg && first) {
-                  setLanguage("relalg");
-                  setQueryFor("relalg", `π_{*}(${first})`);
-                } else if (detail.exampleRelAlg) {
-                  setLanguage("relalg");
-                } else if (detail.exampleSql) {
-                  setLanguage("sql");
-                }
-              }}
-              onDatasetUpdated={onDatasetUpdated}
-              onDatasetDeleted={async (id) => {
-                const remaining = datasets.filter((d) => d.id !== id);
-                setDatasets(remaining);
-                if (dataset?.id === id) {
-                  if (remaining[0]) {
-                    await loadDataset(remaining[0].id);
-                  } else {
-                    setDataset(null);
-                    setQueryRelAlg("");
-                    setQuerySql("");
-                    setResult(null);
-                  }
-                }
-              }}
-              onGroupsInstalled={(groups) => {
-                for (const g of groups) {
-                  syncDatasetList(g);
-                }
-                const last = groups[groups.length - 1];
-                if (!last) return;
-                setResult(null);
-                setError(null);
-                setForkNotice(null);
-                applyExamples(last);
-                if (last.exampleRelAlg) {
-                  setLanguage("relalg");
-                } else if (last.exampleSql) {
-                  setLanguage("sql");
-                } else {
-                  const first = last.relations[0]?.name;
-                  if (first) {
-                    setLanguage("relalg");
-                    setQueryFor("relalg", `π_{*}(${first})`);
-                  }
-                }
               }}
             />
           </div>
@@ -682,16 +709,7 @@ export function CalculatorApp() {
                       const url = new URL(window.location.href);
                       url.searchParams.delete("share");
                       window.history.replaceState({}, "", url.pathname);
-                      applyExamples(copied);
-                      if (copied.exampleRelAlg) {
-                        setLanguage("relalg");
-                      } else {
-                        const first = copied.relations[0]?.name;
-                        if (first) {
-                          setLanguage("relalg");
-                          setQueryFor("relalg", `π_{*}(${first})`);
-                        }
-                      }
+                      await loadDataset(copied.id, { skipPersist: true });
                     } catch (err) {
                       setErrorHeading(errorTitle(err, "Couldn’t copy dataset"));
                       setError(
@@ -750,10 +768,6 @@ export function CalculatorApp() {
                         setLanguage(h.language);
                         setQueryFor(h.language, h.query);
                         setHistoryOpen(false);
-                        if (h.datasetId !== dataset?.id) {
-                          skipNextExample.current = true;
-                          void loadDataset(h.datasetId, { keepQuery: true });
-                        }
                       }}
                     />
                   ) : null}
@@ -821,6 +835,57 @@ export function CalculatorApp() {
           <ResultsWorkspace result={result} />
         </main>
       </div>
+
+      <WorkspaceSheet
+        open={sheetOpen}
+        onOpenChange={setSheetOpen}
+        initialTab={sheetTab}
+        dataTab={dataTab}
+        onDataTabChange={setDataTab}
+        dataset={dataset}
+        datasets={datasets}
+        onOpenWorkspace={(id) => {
+          void loadDataset(id);
+        }}
+        onDatasetCreated={(detail) => {
+          syncDatasetList(detail);
+          setResult(null);
+          setError(null);
+          setForkNotice(null);
+          void loadDataset(detail.id, { skipPersist: true });
+        }}
+        onDatasetUpdated={onDatasetUpdated}
+        onDatasetDeleted={async (id) => {
+          const remaining = datasets.filter((d) => d.id !== id);
+          setDatasets(remaining);
+          if (dataset?.id === id) {
+            if (remaining[0]) {
+              await loadDataset(remaining[0].id);
+            } else {
+              setDataset(null);
+              setQueryRelAlg("");
+              setQuerySql("");
+              setResult(null);
+              setHistory([]);
+            }
+          }
+        }}
+        onGroupsInstalled={(groups) => {
+          for (const g of groups) {
+            syncDatasetList(g);
+          }
+          const last = groups[groups.length - 1];
+          if (!last) return;
+          setResult(null);
+          setError(null);
+          setForkNotice(null);
+          void loadDataset(last.id, { skipPersist: true });
+        }}
+        onRefreshList={async () => {
+          const list = await listDatasets();
+          setDatasets(list);
+        }}
+      />
     </div>
   );
 }
