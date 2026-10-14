@@ -41,11 +41,11 @@ Each group ships a formatted RelAlg example and a matching SQL example.
 
 ## Workspaces
 
-Each dataset is a **workspace**: RelAlg/SQL drafts and **History** are stored per dataset in the browser (`localStorage`). Switching workspaces saves the current drafts and restores that dataset’s saved queries.
+Each dataset is a **workspace**: RelAlg/SQL drafts and **History** are stored per dataset in the browser (`localStorage`). Switching workspaces saves the current drafts and restores that dataset’s saved queries. On reload, the last active workspace and its drafts are restored.
 
-- **Left sidebar** — active workspace name + schema (relations / columns). Drag the edge to resize.
-- **Workspaces** (header or sidebar) — sheet overlay to open Built-in / Mine / Public datasets; rename, delete, share, duplicate, or toggle public/private.
-- **Manage data** — same sheet’s Data tab: Manage relations/rows, Upload, Build, Group Editor.
+- **Left sidebar** — workspace card (opens the overlay) + schema (relations / columns). Drag the edge to resize.
+- **Workspaces** (sidebar card) — near-fullscreen overlay listing **Built-in**, **Public**, and **Mine** (with created dates); open, rename, delete, share, duplicate, or toggle public/private.
+- **Data** tab (same overlay) — edit the open dataset (rename, relations/rows/columns), upload one or more CSVs into a new workspace, build a table, or install RelaX `local_groups` text as workspaces. Delete/share/visibility stay on the Workspaces tab.
 
 ### Persistence & sharing
 

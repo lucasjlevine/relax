@@ -1,4 +1,4 @@
-from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import PlainTextResponse
 
 from app.datasets.group_format import format_group_text, parse_local_groups
@@ -58,17 +58,36 @@ def _detail_from_group(
         isPublic=bool(group.is_public) if not is_builtin else True,
         shareToken=group.share_token if owned else None,
         forkedFrom=group.forked_from,
+        createdAt=group.created_at,
+        updatedAt=group.updated_at,
     )
 
 
-def _relation_data(group, relation_name: str) -> RelationData:
+def _relation_data(
+    group,
+    relation_name: str,
+    *,
+    offset: int = 0,
+    limit: int | None = None,
+) -> RelationData:
     if relation_name not in group.relations:
         raise DatasetError(f"Unknown relation: {relation_name}")
     rel = group.relations[relation_name]
+    total = len(rel.rows)
+    start = max(0, int(offset))
+    if limit is None:
+        page = list(rel.rows[start:])
+        page_limit = None
+    else:
+        page_limit = max(1, int(limit))
+        page = list(rel.rows[start : start + page_limit])
     return RelationData(
         name=rel.name,
         columns=[ColumnInfo(name=c.name, type=c.type_name) for c in rel.columns],
-        rows=list(rel.rows),
+        rows=page,
+        rowCount=total,
+        offset=start,
+        limit=page_limit,
     )
 
 
@@ -103,6 +122,8 @@ def list_datasets(request: Request) -> DatasetListResponse:
                 isBuiltin=is_builtin,
                 isPublic=True if is_builtin else bool(g.is_public),
                 shareToken=g.share_token if owned and not is_builtin else None,
+                createdAt=g.created_at,
+                updatedAt=g.updated_at,
             )
         )
     return DatasetListResponse(datasets=summaries)
@@ -391,13 +412,24 @@ def add_relation(
 
 @router.get("/{dataset_id}/relations/{relation_name}", response_model=RelationData)
 def get_relation(
-    dataset_id: str, relation_name: str, request: Request
+    dataset_id: str,
+    relation_name: str,
+    request: Request,
+    offset: int = Query(0, ge=0),
+    limit: int | None = Query(
+        None,
+        ge=1,
+        le=5000,
+        description="Max rows to return; omit for all remaining rows from offset",
+    ),
 ) -> RelationData:
     catalog = request.app.state.catalog
     owner_id = owner_from_request(request)
     try:
         group = catalog.get_accessible(dataset_id, owner_id)
-        return _relation_data(group, relation_name)
+        return _relation_data(
+            group, relation_name, offset=offset, limit=limit
+        )
     except DatasetError as exc:
         raise _http_dataset_error(exc, not_found=True) from exc
 

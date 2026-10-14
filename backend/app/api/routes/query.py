@@ -63,6 +63,7 @@ def run_query(body: QueryRequest, request: Request) -> QueryResponse:
                     code="validation_error",
                 )
             nodes = [parse_relalg(body_text) for body_text, _label in stmts]
+            parsed = list(zip(nodes, [label for _body, label in stmts], strict=True))
 
             type_changes: list[TypeChangeInfo] = []
             warnings: list[str] = []
@@ -93,6 +94,7 @@ def run_query(body: QueryRequest, request: Request) -> QueryResponse:
                 limit=limit,
                 offset=body.offset,
                 extra_warnings=warnings,
+                parsed=parsed,
             )
             result.datasetId = group.id
             result.typeChanges = type_changes

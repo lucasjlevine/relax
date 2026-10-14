@@ -10,7 +10,8 @@ Base URL: `http://localhost:8000/api` (Silk: same-origin `/api`, proxied by Next
 
 ## `GET /api/datasets`
 
-List available dataset groups (built-in + uploaded/built).
+List available dataset groups (built-in + uploaded/built). Summaries may include
+`owned`, `isBuiltin`, `isPublic`, `shareToken`, `createdAt`, and `updatedAt` (ISO).
 
 Built-in groups: `basics`, `joins`, `setops`, `aggregates`, `library`.
 
@@ -76,7 +77,7 @@ Browser clients must send cookies (`credentials: "include"`).
 | `DELETE` | `/api/datasets/{id}` | Delete owned user dataset (built-ins cannot be deleted) |
 | `POST` | `/api/datasets/{id}/upload` | Add CSV as a new relation in this dataset |
 | `POST` | `/api/datasets/{id}/relations` | Add relation (`relationName`, `columns`, `rows`) |
-| `GET` | `/api/datasets/{id}/relations/{name}` | Relation columns + rows |
+| `GET` | `/api/datasets/{id}/relations/{name}` | Relation columns + rows (`?offset=&limit=` optional paging; response includes `rowCount` / `offset` / `limit`) |
 | `PATCH` | `/api/datasets/{id}/relations/{name}` | Rename relation (`{ "name": "..." }`) |
 | `DELETE` | `/api/datasets/{id}/relations/{name}` | Delete relation |
 | `PATCH` | `/api/datasets/{id}/relations/{name}/columns/{col}` | Rename and/or change type (`{ "name"?, "type"? }`). Number conversion strips `$` / commas; bad cells become null. |

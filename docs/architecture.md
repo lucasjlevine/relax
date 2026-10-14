@@ -41,7 +41,7 @@ FastAPI
 ## Data flow (query)
 
 1. Client posts `{ datasetId, language, query }`
-2. Loader opens in-memory DuckDB and registers group tables
+2. Engine opens a sandboxed DuckDB connection that **ATTACH**es a fingerprint-cached dataset file (built once per dataset content via bulk CSV load; invalidated on mutation)
 3. Parser builds AST (RelAlg) or validates SQL
-4. Engine compiles and executes with limit/offset
+4. Engine compiles and executes with limit/offset; exact `rowCount` skips a separate `COUNT(*)` when the first page is incomplete
 5. Response includes columns, rows, timing, operator tree

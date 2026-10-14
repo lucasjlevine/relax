@@ -327,3 +327,27 @@ def test_persist_reload(tmp_path):
         client2.cookies.set("relax_owner", owner_cookie)
     listed = client2.get("/api/datasets").json()["datasets"]
     assert any(d["id"] == ds for d in listed)
+
+
+def test_relation_paging(tmp_path):
+    client = _client(tmp_path)
+    csv = "id,name\n" + "".join(f"{i},n{i}\n" for i in range(25))
+    up = client.post(
+        "/api/datasets/upload",
+        files={"file": ("big.csv", csv.encode(), "text/csv")},
+        data={"relationName": "Big"},
+    )
+    assert up.status_code == 200
+    ds = up.json()["id"]
+
+    page = client.get(
+        f"/api/datasets/{ds}/relations/Big",
+        params={"offset": 10, "limit": 5},
+    )
+    assert page.status_code == 200
+    body = page.json()
+    assert body["rowCount"] == 25
+    assert body["offset"] == 10
+    assert body["limit"] == 5
+    assert len(body["rows"]) == 5
+    assert body["rows"][0][0] == 10

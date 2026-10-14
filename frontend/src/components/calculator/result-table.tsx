@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { ChevronDown, ChevronRight, Download } from "lucide-react";
 import type { QueryResponse, QueryResultBlock } from "@/lib/api";
 import { downloadCsv, resultsToCsv } from "@/lib/api";
@@ -13,6 +14,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+
+const ROW_HEIGHT = 32;
 
 function blockTitle(block: QueryResultBlock, multi: boolean): string {
   if (block.label?.trim()) return block.label.trim();
@@ -75,8 +78,8 @@ function ResultBlockView({ block, multi, expanded, onToggle }: BlockProps) {
             ))}
           </ul>
         ) : null}
-        <div className="min-h-0 flex-1 overflow-auto">
-          <DataTable block={block} />
+        <div className="min-h-0 flex-1">
+          <DataTable block={block} className="h-full" />
         </div>
       </div>
     );
@@ -135,8 +138,8 @@ function ResultBlockView({ block, multi, expanded, onToggle }: BlockProps) {
               ))}
             </ul>
           ) : null}
-          <div className="max-h-[min(40vh,280px)] overflow-auto">
-            <DataTable block={block} />
+          <div className="max-h-[min(40vh,280px)]">
+            <DataTable block={block} className="max-h-[min(40vh,280px)]" />
           </div>
         </>
       ) : null}
@@ -144,53 +147,107 @@ function ResultBlockView({ block, multi, expanded, onToggle }: BlockProps) {
   );
 }
 
-function DataTable({ block }: { block: QueryResultBlock }) {
+function DataTable({
+  block,
+  className,
+}: {
+  block: QueryResultBlock;
+  className?: string;
+}) {
+  const parentRef = useRef<HTMLDivElement>(null);
+  const rowVirtualizer = useVirtualizer({
+    count: block.rows.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => ROW_HEIGHT,
+    overscan: 16,
+  });
+
   if (block.columns.length === 0) {
     return (
       <div className="p-4 text-sm text-muted-foreground">No columns.</div>
     );
   }
+
+  const virtualRows = rowVirtualizer.getVirtualItems();
+  const totalHeight = rowVirtualizer.getTotalSize();
+
   return (
-    <Table>
-      <TableHeader className="sticky top-0 z-10 bg-card">
-        <TableRow>
-          {block.columns.map((col) => (
-            <TableHead key={col.name} className="whitespace-nowrap">
-              {col.name}
-              <span className="ml-1 font-normal text-muted-foreground">
-                ({col.type})
-              </span>
-            </TableHead>
-          ))}
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {block.rows.length === 0 ? (
+    <div ref={parentRef} className={`overflow-auto ${className ?? ""}`}>
+      <Table>
+        <TableHeader className="sticky top-0 z-10 bg-card">
           <TableRow>
-            <TableCell
-              colSpan={block.columns.length}
-              className="text-muted-foreground"
-            >
-              Empty result
-            </TableCell>
+            {block.columns.map((col) => (
+              <TableHead key={col.name} className="whitespace-nowrap">
+                {col.name}
+                <span className="ml-1 font-normal text-muted-foreground">
+                  ({col.type})
+                </span>
+              </TableHead>
+            ))}
           </TableRow>
-        ) : (
-          block.rows.map((row, i) => (
-            <TableRow key={i}>
-              {row.map((cell, j) => (
-                <TableCell key={j} className="whitespace-nowrap font-mono text-xs">
-                  {cell === null ? (
-                    <span className="italic text-muted-foreground">null</span>
-                  ) : (
-                    String(cell)
-                  )}
-                </TableCell>
-              ))}
+        </TableHeader>
+        <TableBody>
+          {block.rows.length === 0 ? (
+            <TableRow>
+              <TableCell
+                colSpan={block.columns.length}
+                className="text-muted-foreground"
+              >
+                Empty result
+              </TableCell>
             </TableRow>
-          ))
-        )}
-      </TableBody>
-    </Table>
+          ) : (
+            <>
+              {virtualRows.length > 0 && virtualRows[0].start > 0 ? (
+                <TableRow aria-hidden>
+                  <TableCell
+                    colSpan={block.columns.length}
+                    style={{ height: virtualRows[0].start, padding: 0 }}
+                  />
+                </TableRow>
+              ) : null}
+              {virtualRows.map((virtualRow) => {
+                const row = block.rows[virtualRow.index];
+                return (
+                  <TableRow
+                    key={virtualRow.key}
+                    data-index={virtualRow.index}
+                    style={{ height: ROW_HEIGHT }}
+                  >
+                    {row.map((cell, j) => (
+                      <TableCell
+                        key={j}
+                        className="whitespace-nowrap font-mono text-xs"
+                      >
+                        {cell === null ? (
+                          <span className="italic text-muted-foreground">
+                            null
+                          </span>
+                        ) : (
+                          String(cell)
+                        )}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                );
+              })}
+              {virtualRows.length > 0 &&
+              virtualRows[virtualRows.length - 1].end < totalHeight ? (
+                <TableRow aria-hidden>
+                  <TableCell
+                    colSpan={block.columns.length}
+                    style={{
+                      height: totalHeight - virtualRows[virtualRows.length - 1].end,
+                      padding: 0,
+                    }}
+                  />
+                </TableRow>
+              ) : null}
+            </>
+          )}
+        </TableBody>
+      </Table>
+    </div>
   );
 }
 

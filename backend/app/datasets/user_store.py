@@ -15,6 +15,7 @@ from typing import Any
 import duckdb
 
 from app.datasets.loader import ColumnDef, DatasetError, GroupDef, RelationDef, TYPE_MAP
+from app.engine.dataset_db import invalidate as invalidate_dataset_db
 
 
 SAFE_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -71,6 +72,7 @@ def group_to_dict(group: GroupDef) -> dict[str, Any]:
         "exampleRelAlg": group.example_relalg,
         "exampleSql": group.example_sql,
         "forkedFrom": group.forked_from,
+        "createdAt": group.created_at,
         "updatedAt": group.updated_at,
         "isPublic": bool(group.is_public),
         "relations": {
@@ -107,6 +109,7 @@ def group_from_dict(data: dict[str, Any]) -> GroupDef:
         owner_id=data.get("ownerId"),
         share_token=data.get("shareToken"),
         forked_from=data.get("forkedFrom"),
+        created_at=data.get("createdAt") or data.get("updatedAt"),
         updated_at=data.get("updatedAt"),
         is_public=bool(data.get("isPublic", False)),
     )
@@ -147,7 +150,10 @@ class UserDatasetStore:
                 self._by_share[group.share_token] = group.id
 
     def _flush(self, group: GroupDef) -> None:
-        group.updated_at = _now_iso()
+        now = _now_iso()
+        if not group.created_at:
+            group.created_at = now
+        group.updated_at = now
         path = self._path_for(group.id)
         payload = json.dumps(group_to_dict(group), indent=2, ensure_ascii=False)
         fd, tmp_name = tempfile.mkstemp(
@@ -206,12 +212,16 @@ class UserDatasetStore:
                 group.id = _new_dataset_id()
             if not group.share_token:
                 group.share_token = _new_share_token()
+            now = _now_iso()
+            if not group.created_at:
+                group.created_at = now
             if not group.updated_at:
-                group.updated_at = _now_iso()
+                group.updated_at = now
             self._groups[group.id] = group
             if group.share_token:
                 self._by_share[group.share_token] = group.id
             self._flush(group)
+            invalidate_dataset_db(group.id)
             return group
 
     def save_group(self, group: GroupDef) -> GroupDef:
@@ -223,6 +233,7 @@ class UserDatasetStore:
             if group.share_token:
                 self._by_share[group.share_token] = group.id
             self._flush(group)
+            invalidate_dataset_db(group.id)
             return group
 
     def delete_group(self, group_id: str) -> None:
@@ -234,6 +245,7 @@ class UserDatasetStore:
                 self._by_share.pop(group.share_token, None)
             path = self._path_for(group_id)
             path.unlink(missing_ok=True)
+            invalidate_dataset_db(group_id)
 
     def fork_from(
         self,
@@ -255,7 +267,9 @@ class UserDatasetStore:
             forked.description = f"Personal copy of {source.name}"
         elif "Personal copy" not in forked.description:
             forked.description = f"Personal copy of {source.name}. {forked.description}"
-        forked.updated_at = _now_iso()
+        now = _now_iso()
+        forked.created_at = now
+        forked.updated_at = now
         return self.add_group(forked)
 
     def copy_for_owner(self, source: GroupDef, *, owner_id: str) -> GroupDef:

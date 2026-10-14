@@ -24,6 +24,8 @@ class DatasetSummary(BaseModel):
     isBuiltin: bool = False
     isPublic: bool = False
     shareToken: str | None = None
+    createdAt: str | None = None
+    updatedAt: str | None = None
 
 
 class DatasetDetail(DatasetSummary):
@@ -42,6 +44,9 @@ class RelationData(BaseModel):
     name: str
     columns: list[ColumnInfo]
     rows: list[list[Any]]
+    rowCount: int = 0
+    offset: int = 0
+    limit: int | None = None
 
 
 class DatasetListResponse(BaseModel):

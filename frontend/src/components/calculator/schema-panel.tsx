@@ -5,7 +5,6 @@ import { Database, Pencil, Plus, Trash2 } from "lucide-react";
 import type {
   ColumnInfo,
   DatasetDetail,
-  DatasetSummary,
   RelationData,
 } from "@/lib/api";
 import {
@@ -14,7 +13,6 @@ import {
   addColumn,
   buildRelation,
   deleteColumn,
-  deleteDataset,
   deleteRelation,
   deleteRelationRow,
   getRelation,
@@ -22,7 +20,6 @@ import {
   renameColumn,
   renameDataset,
   renameRelation,
-  shareUrl,
   updateRelationRow,
   uploadDataset,
   uploadRelationCsv,
@@ -47,10 +44,7 @@ export type DataPanelTab = "manage" | "upload" | "builder" | "group";
 
 type SidebarProps = {
   dataset: DatasetDetail | null;
-  datasets: DatasetSummary[];
   onOpenWorkspaces: () => void;
-  onOpenManage: () => void;
-  onSelectDataset: (id: string) => void;
 };
 
 const COL_TYPES = ["string", "number", "boolean", "date"] as const;
@@ -68,16 +62,8 @@ function workspaceBadge(dataset: DatasetDetail | null) {
   return <Badge variant="secondary">Public</Badge>;
 }
 
-/** Slim left rail: active workspace + demo shortcuts + schema. */
-export function SchemaSidebar({
-  dataset,
-  datasets,
-  onOpenWorkspaces,
-  onOpenManage,
-  onSelectDataset,
-}: SidebarProps) {
-  const demos = datasets.filter((d) => d.isBuiltin);
-
+/** Slim left rail: workspace card opens the overlay; schema below. */
+export function SchemaSidebar({ dataset, onOpenWorkspaces }: SidebarProps) {
   return (
     <aside className="flex h-full min-h-0 w-full flex-col overflow-hidden">
       <div className="shrink-0 space-y-2 border-b p-3">
@@ -100,53 +86,14 @@ export function SchemaSidebar({
               </span>
             ) : (
               <span className="mt-0.5 block text-xs text-muted-foreground">
-                Open workspaces to switch datasets
+                Open workspaces to switch or create a dataset
               </span>
             )}
           </span>
         </button>
         <div className="flex flex-wrap items-center gap-1.5">
           {workspaceBadge(dataset)}
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="ml-auto"
-            onClick={onOpenManage}
-            disabled={
-              !dataset ||
-              (!dataset.isBuiltin && dataset.owned === false)
-            }
-            title={
-              dataset && !dataset.isBuiltin && dataset.owned === false
-                ? "Duplicate this public dataset to edit it"
-                : undefined
-            }
-          >
-            Manage data
-          </Button>
         </div>
-        {demos.length ? (
-          <div className="space-y-1.5 pt-1">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Demo datasets
-            </p>
-            <div className="flex flex-wrap gap-1">
-              {demos.map((d) => (
-                <Button
-                  key={d.id}
-                  type="button"
-                  size="sm"
-                  variant={dataset?.id === d.id ? "default" : "outline"}
-                  className="h-7 px-2 text-xs"
-                  onClick={() => onSelectDataset(d.id)}
-                >
-                  {d.name}
-                </Button>
-              ))}
-            </div>
-          </div>
-        ) : null}
       </div>
 
       <ScrollArea className="min-h-0 flex-1">
@@ -198,14 +145,12 @@ export function ManagePanel({
   setBusy,
   setError,
   onUpdated,
-  onDeleted,
 }: {
   dataset: DatasetDetail;
   busy: boolean;
   setBusy: (v: boolean) => void;
   setError: (v: string | null) => void;
   onUpdated: (d: DatasetDetail) => void;
-  onDeleted: (id: string) => void | Promise<void>;
 }) {
   const [nameDraft, setNameDraft] = useState(dataset.name);
   const [activeRel, setActiveRel] = useState(dataset.relations[0]?.name ?? "");
@@ -222,10 +167,16 @@ export function ManagePanel({
   ]);
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvRelName, setCsvRelName] = useState("");
+  const [rowOffset, setRowOffset] = useState(0);
+  const ROW_PAGE = 100;
 
-  const refreshRelation = async (relName: string) => {
-    const refreshed = await getRelation(dataset.id, relName);
+  const refreshRelation = async (relName: string, offset = rowOffset) => {
+    const refreshed = await getRelation(dataset.id, relName, {
+      offset,
+      limit: ROW_PAGE,
+    });
     setRelation(refreshed);
+    setRowOffset(refreshed.offset);
     setRowDrafts(
       refreshed.rows.map((r) => r.map((cell) => (cell == null ? "" : String(cell)))),
     );
@@ -244,8 +195,13 @@ export function ManagePanel({
       const next = dataset.relations[0]?.name ?? "";
       setActiveRel(next);
       setRelNameDraft(next);
+      setRowOffset(0);
     }
   }, [dataset.relations, activeRel]);
+
+  useEffect(() => {
+    setRowOffset(0);
+  }, [dataset.id, activeRel]);
 
   useEffect(() => {
     if (!activeRel) {
@@ -257,7 +213,10 @@ export function ManagePanel({
     let cancelled = false;
     (async () => {
       try {
-        const data = await getRelation(dataset.id, activeRel);
+        const data = await getRelation(dataset.id, activeRel, {
+          offset: rowOffset,
+          limit: ROW_PAGE,
+        });
         if (cancelled) return;
         setRelation(data);
         setRowDrafts(
@@ -276,7 +235,7 @@ export function ManagePanel({
     return () => {
       cancelled = true;
     };
-  }, [dataset.id, activeRel, setError]);
+  }, [dataset.id, activeRel, rowOffset, setError]);
 
   const parseCell = (raw: string, type: string): unknown => {
     const trimmed = raw.trim();
@@ -302,6 +261,10 @@ export function ManagePanel({
   return (
     <div className="min-w-0 space-y-4 text-sm">
       <div className="space-y-2 rounded-md border bg-background p-3">
+        <p className="text-xs text-muted-foreground">
+          Rename this dataset and edit its relations. Delete, share, and visibility
+          live on the Workspaces tab.
+        </p>
         <Label htmlFor="rename-ds">Dataset name</Label>
         <div className="flex gap-2">
           <Input
@@ -329,49 +292,6 @@ export function ManagePanel({
             Save
           </Button>
         </div>
-        <Button
-          type="button"
-          size="sm"
-          variant="destructive"
-          className="w-full"
-          disabled={busy}
-          onClick={async () => {
-            if (!window.confirm(`Delete dataset “${dataset.name}”?`)) return;
-            setBusy(true);
-            setError(null);
-            try {
-              await deleteDataset(dataset.id);
-              await onDeleted(dataset.id);
-            } catch (err) {
-              setError(err instanceof Error ? err.message : "Delete failed");
-            } finally {
-              setBusy(false);
-            }
-          }}
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-          Delete dataset
-        </Button>
-        {dataset.shareToken && dataset.owned !== false && !dataset.isBuiltin ? (
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="w-full"
-            disabled={busy}
-            onClick={async () => {
-              const url = shareUrl(dataset.shareToken!);
-              try {
-                await navigator.clipboard.writeText(url);
-                setError(null);
-              } catch {
-                window.prompt("Copy share link:", url);
-              }
-            }}
-          >
-            Copy share link
-          </Button>
-        ) : null}
         {dataset.isBuiltin ? (
           <p className="text-xs text-muted-foreground">
             Editing a built-in dataset creates a personal copy saved for this
@@ -758,8 +678,10 @@ export function ManagePanel({
                 </tr>
               </thead>
               <tbody>
-                {rowDrafts.map((row, ri) => (
-                  <tr key={ri} className="border-b last:border-0">
+                {rowDrafts.map((row, ri) => {
+                  const absIndex = (relation.offset ?? 0) + ri;
+                  return (
+                  <tr key={absIndex} className="border-b last:border-0">
                     {relation.columns.map((col, ci) => (
                       <td key={col.name} className="p-1">
                         <Input
@@ -793,7 +715,7 @@ export function ManagePanel({
                               const detail = await updateRelationRow(
                                 dataset.id,
                                 relation.name,
-                                ri,
+                                absIndex,
                                 values,
                               );
                               onUpdated(detail);
@@ -816,7 +738,7 @@ export function ManagePanel({
                         type="button"
                         size="icon"
                         variant="ghost"
-                        aria-label={`Delete row ${ri + 1}`}
+                        aria-label={`Delete row ${absIndex + 1}`}
                         disabled={busy}
                         onClick={async () => {
                           setBusy(true);
@@ -825,10 +747,15 @@ export function ManagePanel({
                             const detail = await deleteRelationRow(
                               dataset.id,
                               relation.name,
-                              ri,
+                              absIndex,
                             );
                             onUpdated(detail);
-                            await refreshRelation(relation.name);
+                            const nextTotal = Math.max(0, (relation.rowCount ?? 0) - 1);
+                            const nextOffset =
+                              rowOffset > 0 && rowOffset >= nextTotal
+                                ? Math.max(0, nextTotal - ROW_PAGE)
+                                : rowOffset;
+                            await refreshRelation(relation.name, nextOffset);
                           } catch (err) {
                             setError(
                               err instanceof Error
@@ -844,7 +771,8 @@ export function ManagePanel({
                       </Button>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
                 <tr className="bg-muted/20">
                   {relation.columns.map((col, ci) => (
                     <td key={col.name} className="p-1">
@@ -882,7 +810,11 @@ export function ManagePanel({
                             values,
                           );
                           onUpdated(detail);
-                          await refreshRelation(relation.name);
+                          const nextTotal = (relation.rowCount ?? 0) + 1;
+                          const lastPageOffset =
+                            Math.floor(Math.max(0, nextTotal - 1) / ROW_PAGE) *
+                            ROW_PAGE;
+                          await refreshRelation(relation.name, lastPageOffset);
                           setNewRow(relation.columns.map(() => ""));
                         } catch (err) {
                           setError(
@@ -900,6 +832,45 @@ export function ManagePanel({
               </tbody>
             </table>
           </div>
+          {(relation.rowCount ?? 0) > ROW_PAGE ? (
+            <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+              <span>
+                Rows {(relation.offset ?? 0) + 1}–
+                {(relation.offset ?? 0) + relation.rows.length} of{" "}
+                {relation.rowCount}
+              </span>
+              <div className="flex gap-1">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-7"
+                  disabled={busy || (relation.offset ?? 0) <= 0}
+                  onClick={() =>
+                    setRowOffset(Math.max(0, (relation.offset ?? 0) - ROW_PAGE))
+                  }
+                >
+                  Previous
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-7"
+                  disabled={
+                    busy ||
+                    (relation.offset ?? 0) + relation.rows.length >=
+                      (relation.rowCount ?? 0)
+                  }
+                  onClick={() =>
+                    setRowOffset((relation.offset ?? 0) + ROW_PAGE)
+                  }
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          ) : null}
           <Button
             type="button"
             size="sm"
@@ -940,6 +911,12 @@ export function ManagePanel({
   );
 }
 
+function relationNameFromFile(file: File): string {
+  const base = file.name.replace(/\.[^.]+$/, "").replace(/[^A-Za-z0-9_]+/g, "_");
+  const cleaned = base.replace(/^[^A-Za-z_]+/, "") || "R";
+  return cleaned.slice(0, 64);
+}
+
 export function UploadPanel({
   busy,
   setBusy,
@@ -951,43 +928,52 @@ export function UploadPanel({
   setError: (v: string | null) => void;
   onCreated: (d: DatasetDetail) => void;
 }) {
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [relationName, setRelationName] = useState("");
   const [hasHeader, setHasHeader] = useState(true);
   const [skipRows, setSkipRows] = useState(0);
   const [delimiter, setDelimiter] = useState(",");
-  const isCsv = file?.name.toLowerCase().endsWith(".csv") ?? true;
+  const hasCsv = files.some((f) => f.name.toLowerCase().endsWith(".csv"));
+  const multiCsv = files.filter((f) => f.name.toLowerCase().endsWith(".csv")).length > 1;
 
   return (
     <div className="space-y-4 text-sm">
       <div>
         <p className="mb-2 text-muted-foreground">
-          Import a CSV or SQLite database (max 5 MB).
+          Import CSV or SQLite files (max 5 MB each). Select multiple CSVs to merge
+          them as relations in one new workspace.
         </p>
         <FilePicker
           accept=".csv,.db,.sqlite,.sqlite3"
           disabled={busy}
-          file={file}
-          onFileChange={setFile}
-          label="Drop a file or browse"
-          hint=".csv, .db, .sqlite"
+          multiple
+          files={files}
+          onFilesChange={setFiles}
+          label="Drop files or browse"
+          hint="Multiple CSVs → one dataset with several relations"
         />
       </div>
 
-      {isCsv ? (
+      {hasCsv ? (
         <div className="space-y-3 rounded-md border bg-background p-3">
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
             CSV options
           </p>
-          <div className="space-y-1">
-            <Label htmlFor="rel-name">Relation name</Label>
-            <Input
-              id="rel-name"
-              value={relationName}
-              onChange={(e) => setRelationName(e.target.value)}
-              placeholder="People"
-            />
-          </div>
+          {!multiCsv ? (
+            <div className="space-y-1">
+              <Label htmlFor="rel-name">Relation name</Label>
+              <Input
+                id="rel-name"
+                value={relationName}
+                onChange={(e) => setRelationName(e.target.value)}
+                placeholder="People"
+              />
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Each CSV becomes a relation named from its file name.
+            </p>
+          )}
           <div className="flex items-center gap-2">
             <Checkbox
               id="has-header"
@@ -1030,18 +1016,38 @@ export function UploadPanel({
       <Button
         type="button"
         className="w-full"
-        disabled={busy || !file}
+        disabled={busy || files.length === 0}
         onClick={async () => {
-          if (!file) return;
+          if (!files.length) return;
           setBusy(true);
           setError(null);
           try {
-            const detail = await uploadDataset(file, {
-              relationName: relationName || undefined,
+            const csvOpts = {
               hasHeader,
               skipRows,
               delimiter,
+            };
+            const first = files[0];
+            let detail = await uploadDataset(first, {
+              ...csvOpts,
+              relationName:
+                relationName ||
+                (first.name.toLowerCase().endsWith(".csv")
+                  ? relationNameFromFile(first)
+                  : undefined),
             });
+            for (const extra of files.slice(1)) {
+              if (!extra.name.toLowerCase().endsWith(".csv")) {
+                throw new Error(
+                  `Only CSV files can be merged into one dataset (skip “${extra.name}” or upload it alone).`,
+                );
+              }
+              detail = await uploadRelationCsv(detail.id, extra, {
+                ...csvOpts,
+                relationName: relationNameFromFile(extra),
+              });
+            }
+            setFiles([]);
             onCreated(detail);
           } catch (err) {
             setError(err instanceof Error ? err.message : "Upload failed");
@@ -1050,7 +1056,11 @@ export function UploadPanel({
           }
         }}
       >
-        {busy ? "Uploading…" : "Upload dataset"}
+        {busy
+          ? "Uploading…"
+          : files.length > 1
+            ? `Upload ${files.length} files as one workspace`
+            : "Upload dataset"}
       </Button>
     </div>
   );

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
-import { AlignLeft, FolderOpen, History, PanelLeft, Play } from "lucide-react";
+import { AlignLeft, History, PanelLeft, Play } from "lucide-react";
 import {
   formatQuery,
   getDataset,
@@ -355,36 +355,20 @@ export function CalculatorApp() {
     async (selectId?: string) => {
       const list = await listDatasets();
       setDatasets(list);
-      const session = !booted.current ? loadSession() : null;
-      const active = !booted.current ? getActiveWorkspaceId() : null;
+      // Prefer last active workspace, then legacy session dataset id.
       const preferred =
         selectId ??
-        active ??
-        session?.datasetId ??
+        (!booted.current ? getActiveWorkspaceId() : null) ??
+        (!booted.current ? loadSession()?.datasetId : null) ??
         null;
       const id =
         preferred && list.some((d) => d.id === preferred)
           ? preferred
           : list[0]?.id;
-      if (!booted.current && session && session.datasetId === id) {
-        if (session.language === "relalg" || session.language === "sql") {
-          setLanguage(session.language);
-        }
-        const hasDraft =
-          session.queryRelAlg.trim().length > 0 ||
-          session.querySql.trim().length > 0;
-        if (hasDraft) {
-          setQueryRelAlg(session.queryRelAlg);
-          setQuerySql(session.querySql);
-          skipNextExample.current = true;
-        }
-      }
       booted.current = true;
       if (id) {
-        await loadDataset(id, {
-          keepQuery: skipNextExample.current,
-          skipPersist: true,
-        });
+        // loadDataset → applyWorkspaceState restores per-dataset drafts/history.
+        await loadDataset(id, { skipPersist: true });
       } else {
         setDataset(null);
         setQueryRelAlg("");
@@ -531,14 +515,9 @@ export function CalculatorApp() {
     syncDatasetList(detail, { previousId });
   };
 
-  const openWorkspacesSheet = () => {
-    setSheetTab("workspaces");
-    setSheetOpen(true);
-  };
-
-  const openManageSheet = () => {
-    setSheetTab("data");
-    setDataTab("manage");
+  const openWorkspaces = (tab: "workspaces" | "data" = "workspaces") => {
+    setSheetTab(tab);
+    if (tab === "data") setDataTab("manage");
     setSheetOpen(true);
   };
 
@@ -609,15 +588,6 @@ export function CalculatorApp() {
             <PanelLeft className="h-4 w-4" />
             {sidebarCollapsed ? "Show panel" : "Hide panel"}
           </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={openWorkspacesSheet}
-          >
-            <FolderOpen className="h-4 w-4" aria-hidden />
-            Workspaces
-          </Button>
           <button
             ref={functionsBtnRef}
             type="button"
@@ -656,12 +626,7 @@ export function CalculatorApp() {
           >
             <SchemaSidebar
               dataset={dataset}
-              datasets={datasets}
-              onOpenWorkspaces={openWorkspacesSheet}
-              onOpenManage={openManageSheet}
-              onSelectDataset={(id) => {
-                void loadDataset(id);
-              }}
+              onOpenWorkspaces={() => openWorkspaces("workspaces")}
             />
           </div>
           {!sidebarCollapsed ? (

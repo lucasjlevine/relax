@@ -369,22 +369,25 @@ SELECT * FROM Sales`}</Pre>
             <ul className="list-disc space-y-2 pl-5">
               <li>
                 <strong className="font-medium text-foreground">Sidebar</strong> —
-                active workspace + schema (relations / columns)
+                workspace card opens the overlay; schema lists relations / columns
               </li>
               <li>
-                <strong className="font-medium text-foreground">Workspaces</strong> —
-                overlay to open Built-in / Mine / Public datasets; rename, delete,
-                share, duplicate, make public or private
+                <strong className="font-medium text-foreground">Workspaces</strong>{" "}
+                (sidebar card) — full-screen overlay listing Built-in, Public, and
+                Mine (with created dates); open, rename, delete, share, duplicate,
+                or change visibility
               </li>
               <li>
-                <strong className="font-medium text-foreground">Manage data</strong> —
-                same overlay: Manage relations/rows, Upload, Build, Group Editor
+                <strong className="font-medium text-foreground">Data</strong> tab —
+                edit the open dataset (rename, relations/rows/columns), upload one
+                or more CSVs into a new workspace, build a table, or install RelaX{" "}
+                <Code>local_groups</Code> text as workspaces
               </li>
             </ul>
             <p className="text-sm">
               Uploads default to private. Public datasets appear for everyone to
-              open and query (edits stay with the owner). Drafts and history restore
-              after a reload.
+              open and query (edits stay with the owner). The last workspace and its
+              drafts restore after a reload.
             </p>
           </Section>
 

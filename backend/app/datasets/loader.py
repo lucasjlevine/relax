@@ -47,6 +47,7 @@ class GroupDef:
     owner_id: str | None = None
     share_token: str | None = None
     forked_from: str | None = None
+    created_at: str | None = None
     updated_at: str | None = None
     # When True, any client may list / read / query (mutations stay owner-only).
     is_public: bool = False

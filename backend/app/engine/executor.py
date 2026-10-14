@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 import threading
 import time
 from typing import Any
@@ -8,7 +7,11 @@ from typing import Any
 import duckdb
 
 from app.config import get_settings
-from app.datasets.loader import TYPE_MAP, GroupDef
+from app.datasets.loader import GroupDef
+from app.engine.dataset_db import open_query_connection, register_group
+from app.engine.compiler import CompileError, SqlCompiler, _quote_ident
+from app.engine.messages import humanize_parse_error, humanize_query_error
+from app.engine.tree import build_operator_tree
 from app.models.schemas import (
     ColumnInfo,
     OperatorTreeNode,
@@ -19,11 +22,16 @@ from app.parsers.relalg import ast as ra
 from app.parsers.relalg.parser import RelAlgParseError, parse_relalg
 from app.parsers.relalg.statements import split_relalg_statements
 from app.parsers.sql.validator import SqlValidationError, validate_sql
-from app.engine.compiler import CompileError, SqlCompiler, _quote_ident
-from app.engine.tree import build_operator_tree
 
-
-from app.engine.messages import humanize_parse_error, humanize_query_error
+# Re-export for tests / callers that imported from executor.
+__all__ = [
+    "QueryError",
+    "SchemaAwareCompiler",
+    "execute_relalg",
+    "execute_sql",
+    "execute_sql_query",
+    "register_group",
+]
 
 
 class QueryError(Exception):
@@ -45,18 +53,6 @@ def _raise_exec(exc: Exception, *, language: str) -> None:
         humanize_query_error(str(exc), language=language),
         code="execution_error",
     ) from exc
-
-
-def _configure_conn(conn: duckdb.DuckDBPyConnection) -> None:
-    settings = get_settings()
-    conn.execute("SET enable_external_access=false")
-    # Bound resource use on shared hosts (Silk).
-    mem = (settings.duckdb_memory_limit or "256MB").strip()
-    if not re.fullmatch(r"\d+(?:\.\d+)?\s*(?:B|KB|MB|GB|TB)", mem, re.I):
-        mem = "256MB"
-    conn.execute("SET memory_limit=?", [mem])
-    threads = max(1, min(8, int(settings.duckdb_threads)))
-    conn.execute(f"SET threads={threads}")
 
 
 def _execute_timed(
@@ -99,25 +95,6 @@ def _execute_timed(
     return box.get("description"), box.get("rows") or []
 
 
-def _duck_type(logical: str) -> str:
-    return TYPE_MAP.get(logical.lower(), "VARCHAR")
-
-
-def register_group(conn: duckdb.DuckDBPyConnection, group: GroupDef) -> None:
-    for rel in group.relations.values():
-        cols_sql = ", ".join(
-            f'"{col.name}" {_duck_type(col.type_name)}' for col in rel.columns
-        )
-        conn.execute(f'CREATE TABLE "{rel.name}" ({cols_sql})')
-        if not rel.rows:
-            continue
-        placeholders = ", ".join(["?"] * len(rel.columns))
-        conn.executemany(
-            f'INSERT INTO "{rel.name}" VALUES ({placeholders})',
-            rel.rows,
-        )
-
-
 def _map_duck_type(type_str: str) -> str:
     t = type_str.upper()
     if any(x in t for x in ("INT", "DOUBLE", "FLOAT", "DECIMAL", "HUGEINT", "NUMERIC")):
@@ -137,6 +114,34 @@ def _serialize_cell(value: Any) -> Any:
     return str(value)
 
 
+def _page_with_count(
+    conn: duckdb.DuckDBPyConnection,
+    sql: str,
+    *,
+    limit: int,
+    offset: int,
+    timeout_ms: int,
+) -> tuple[Any, list[Any], int]:
+    """
+    Fetch a page and an exact total row count.
+
+    When ``offset == 0`` and the page has fewer than ``limit`` rows, the page
+    length is the exact total (skip a separate COUNT over the full plan).
+    """
+    limited = (
+        f"SELECT * FROM ({sql}) AS _page "
+        f"LIMIT {int(limit)} OFFSET {int(offset)}"
+    )
+    description, raw_rows = _execute_timed(conn, limited, timeout_ms=timeout_ms)
+    if offset == 0 and len(raw_rows) < limit:
+        return description, raw_rows, len(raw_rows)
+
+    count_sql = f"SELECT COUNT(*) FROM ({sql}) AS _count_sub"
+    _desc, count_rows = _execute_timed(conn, count_sql, timeout_ms=timeout_ms)
+    total = int(count_rows[0][0]) if count_rows else 0
+    return description, raw_rows, total
+
+
 class SchemaAwareCompiler(SqlCompiler):
     """Compiler with dataset schemas (Relation.attr provenance) and division support."""
 
@@ -152,14 +157,20 @@ class SchemaAwareCompiler(SqlCompiler):
         rows = self.conn.execute(f"DESCRIBE SELECT * FROM ({sql}) AS _d").fetchall()
         return [r[0] for r in rows]
 
+    def _columns_for_node(self, node: ra.RANode, compiled_sql: str) -> list[str]:
+        try:
+            return [c.name for c in self._schema(node)]
+        except CompileError:
+            return self._columns_of(compiled_sql)
+
     def _compile(self, node: ra.RANode) -> str:
         if not isinstance(node, ra.Division):
             return SqlCompiler._compile(self, node)
 
         left = self._compile(node.left)
         right = self._compile(node.right)
-        lcols = self._columns_of(left)
-        rcols = self._columns_of(right)
+        lcols = self._columns_for_node(node.left, left)
+        rcols = self._columns_for_node(node.right, right)
         if not set(rcols).issubset(set(lcols)):
             raise CompileError(
                 f"Division requires right columns ⊆ left columns; got {rcols} vs {lcols}"
@@ -169,16 +180,21 @@ class SchemaAwareCompiler(SqlCompiler):
             raise CompileError("Division result would have no columns")
         qlist = ", ".join(_quote_ident(c) for c in quotient_cols)
         rlist = ", ".join(_quote_ident(c) for c in rcols)
+        # CTE form so left/right SQL appear once (same relational result).
         return f"""
-            SELECT DISTINCT {qlist} FROM ({left}) AS _r
-            EXCEPT
-            SELECT {qlist} FROM (
-              SELECT {qlist}, {rlist} FROM (
-                SELECT DISTINCT {qlist} FROM ({left}) AS _q
-              ) AS _qq CROSS JOIN ({right}) AS _s
+            (
+              WITH _div_left AS ({left}),
+                   _div_right AS ({right})
+              SELECT DISTINCT {qlist} FROM _div_left AS _r
               EXCEPT
-              SELECT {qlist}, {rlist} FROM ({left}) AS _rr
-            ) AS _incomplete
+              SELECT {qlist} FROM (
+                SELECT {qlist}, {rlist} FROM (
+                  SELECT DISTINCT {qlist} FROM _div_left AS _q
+                ) AS _qq CROSS JOIN _div_right AS _s
+                EXCEPT
+                SELECT {qlist}, {rlist} FROM _div_left AS _rr
+              ) AS _incomplete
+            )
             """
 
 
@@ -193,24 +209,16 @@ def execute_sql(
 ) -> QueryResponse:
     settings = get_settings()
     timeout_ms = max(100, int(settings.query_timeout_ms))
-    conn = duckdb.connect(database=":memory:")
+    conn = open_query_connection(group)
     try:
-        _configure_conn(conn)
-        register_group(conn, group)
-
-        count_sql = f"SELECT COUNT(*) FROM ({sql}) AS _count_sub"
         start = time.perf_counter()
         try:
-            _desc, count_rows = _execute_timed(
-                conn, count_sql, timeout_ms=timeout_ms
-            )
-            total = int(count_rows[0][0]) if count_rows else 0
-            limited = (
-                f"SELECT * FROM ({sql}) AS _page "
-                f"LIMIT {int(limit)} OFFSET {int(offset)}"
-            )
-            description, raw_rows = _execute_timed(
-                conn, limited, timeout_ms=timeout_ms
+            description, raw_rows, total = _page_with_count(
+                conn,
+                sql,
+                limit=limit,
+                offset=offset,
+                timeout_ms=timeout_ms,
             )
         except QueryError:
             raise
@@ -244,39 +252,46 @@ def execute_relalg(
     limit: int,
     offset: int,
     extra_warnings: list[str] | None = None,
+    parsed: list[tuple[ra.RANode, str | None]] | None = None,
 ) -> QueryResponse:
     settings = get_settings()
     timeout_ms = max(100, int(settings.query_timeout_ms))
     max_stmts = max(1, int(settings.max_relalg_statements))
 
-    statements = split_relalg_statements(query)
-    if not statements:
-        raise QueryError("Query must not be empty", code="validation_error")
-    if len(statements) > max_stmts:
-        raise QueryError(
-            f"Too many statements (max {max_stmts}). Split the work across Executes.",
-            code="validation_error",
-        )
-
-    parsed: list[tuple[ra.RANode, str | None]] = []
-    for body, label in statements:
-        try:
-            ast = parse_relalg(body)
-        except RelAlgParseError as exc:
-            prefix = f"{label}: " if label else ""
+    if parsed is None:
+        statements = split_relalg_statements(query)
+        if not statements:
+            raise QueryError("Query must not be empty", code="validation_error")
+        if len(statements) > max_stmts:
             raise QueryError(
-                prefix + humanize_parse_error(exc.message), code="parse_error"
-            ) from exc
-        parsed.append((ast, label))
+                f"Too many statements (max {max_stmts}). Split the work across Executes.",
+                code="validation_error",
+            )
+        parsed = []
+        for body, label in statements:
+            try:
+                ast = parse_relalg(body)
+            except RelAlgParseError as exc:
+                prefix = f"{label}: " if label else ""
+                raise QueryError(
+                    prefix + humanize_parse_error(exc.message), code="parse_error"
+                ) from exc
+            parsed.append((ast, label))
+    else:
+        if not parsed:
+            raise QueryError("Query must not be empty", code="validation_error")
+        if len(parsed) > max_stmts:
+            raise QueryError(
+                f"Too many statements (max {max_stmts}). Split the work across Executes.",
+                code="validation_error",
+            )
 
     blocks: list[QueryResultBlock] = []
     total_ms = 0.0
     all_warnings: list[str] = list(extra_warnings or [])
 
-    conn = duckdb.connect(database=":memory:")
+    conn = open_query_connection(group)
     try:
-        _configure_conn(conn)
-        register_group(conn, group)
         relation_columns = {
             rel.name: [c.name for c in rel.columns]
             for rel in group.relations.values()
@@ -294,19 +309,14 @@ def execute_relalg(
                     code="compile_error",
                 ) from exc
 
-            count_sql = f"SELECT COUNT(*) FROM ({sql}) AS _count_sub"
             start = time.perf_counter()
             try:
-                _desc, count_rows = _execute_timed(
-                    conn, count_sql, timeout_ms=timeout_ms
-                )
-                total = int(count_rows[0][0]) if count_rows else 0
-                limited = (
-                    f"SELECT * FROM ({sql}) AS _page "
-                    f"LIMIT {int(limit)} OFFSET {int(offset)}"
-                )
-                description, raw_rows = _execute_timed(
-                    conn, limited, timeout_ms=timeout_ms
+                description, raw_rows, total = _page_with_count(
+                    conn,
+                    sql,
+                    limit=limit,
+                    offset=offset,
+                    timeout_ms=timeout_ms,
                 )
             except QueryError as exc:
                 prefix = f"{label}: " if label else ""

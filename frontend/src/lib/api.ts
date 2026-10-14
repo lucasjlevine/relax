@@ -24,6 +24,8 @@ export type DatasetSummary = {
   isBuiltin?: boolean;
   isPublic?: boolean;
   shareToken?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
 };
 export type DatasetDetail = DatasetSummary & {
   relations: RelationInfo[];
@@ -36,6 +38,9 @@ export type RelationData = {
   name: string;
   columns: ColumnInfo[];
   rows: unknown[][];
+  rowCount: number;
+  offset: number;
+  limit?: number | null;
 };
 export type OperatorTreeNode = {
   id: string;
@@ -239,10 +244,15 @@ export async function deleteDataset(id: string): Promise<void> {
 export async function getRelation(
   datasetId: string,
   relationName: string,
+  opts?: { offset?: number; limit?: number },
 ): Promise<RelationData> {
+  const params = new URLSearchParams();
+  if (opts?.offset != null) params.set("offset", String(opts.offset));
+  if (opts?.limit != null) params.set("limit", String(opts.limit));
+  const qs = params.toString();
   return handle<RelationData>(
     await apiFetch(
-      `${API_BASE}/datasets/${datasetId}/relations/${encodeURIComponent(relationName)}`,
+      `${API_BASE}/datasets/${datasetId}/relations/${encodeURIComponent(relationName)}${qs ? `?${qs}` : ""}`,
       { cache: "no-store" },
     ),
   );

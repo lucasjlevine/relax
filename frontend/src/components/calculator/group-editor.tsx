@@ -183,8 +183,12 @@ export function GroupEditorPanel({
     <div className="flex h-full min-h-0 flex-col gap-3 text-sm">
       <div>
         <p className="text-muted-foreground">
-          RelaX-compatible <span className="font-mono text-xs">local_groups</span>{" "}
-          editor. Preview parses without installing; Use adds groups to your session.
+          Paste RelaX-compatible{" "}
+          <span className="font-mono text-xs">local_groups</span> text to create
+          one or more workspaces at once (each{" "}
+          <span className="font-mono text-xs">group:</span> block becomes a dataset
+          under Mine). Preview checks the text; Use installs it. Load current
+          exports the open workspace back into this format.
         </p>
       </div>
 
